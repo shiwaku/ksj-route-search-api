@@ -18,16 +18,12 @@
     }
     #panel h1 { font-size: 14px; font-weight: bold; padding: 12px 14px 8px; border-bottom: 1px solid #eee; }
 
-    #loading-bar {
+    #api-banner {
       background: #fff8e1; border-bottom: 1px solid #ffe082;
-      padding: 8px 12px; font-size: 11px; display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; font-size: 11px; line-height: 1.6; display: none;
     }
-    .spinner {
-      width: 14px; height: 14px; border: 2px solid #ddd;
-      border-top-color: #0060df; border-radius: 50%;
-      animation: spin .8s linear infinite; flex-shrink: 0;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    #api-banner a { color: #0060df; }
+    #api-banner code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 10px; }
 
     .tabs { display: flex; border-bottom: 2px solid #ddd; }
     .tab {
@@ -37,10 +33,7 @@
       transition: background .15s;
     }
     .tab:hover { background: #e4e4e4; color: #333; }
-    .tab.active {
-      background: #fff; color: #0060df; font-weight: bold;
-      border-bottom: 3px solid #0060df;
-    }
+    .tab.active { background: #fff; color: #0060df; font-weight: bold; border-bottom: 3px solid #0060df; }
 
     .pane { padding: 12px 14px; display: none; flex-direction: column; gap: 10px; }
     .pane.active { display: flex; }
@@ -88,16 +81,14 @@
 <div id="survey-attr">国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85</div>
 <div id="panel">
   <h1>経路探索・到達圏ビューワー</h1>
-  <div id="loading-bar">
-    <div class="spinner"></div>
-    <span id="loading-msg">道路ネットワーク読み込み中...</span>
-  </div>
+  <div id="api-banner"></div>
 
   <div class="tabs">
     <button class="tab active" data-pane="pane-reach">到達圏</button>
     <button class="tab"        data-pane="pane-route">経路探索</button>
   </div>
 
+  <!-- 到達圏パネル -->
   <div id="pane-reach" class="pane active">
     <div>
       <label>移動モード</label>
@@ -125,6 +116,7 @@
     </div>
   </div>
 
+  <!-- 経路探索パネル -->
   <div id="pane-route" class="pane">
     <div>
       <label>移動モード</label>
@@ -148,14 +140,11 @@
 <script>
 // ─────────────────────────────────────────────
 // URL パラメータ
-//   ?api=https://your-server.com  → FastAPI サーバーモード
-//   （省略）                       → Web Worker サーバーレスモード
+//   ?api=https://your-server.com  → FastAPI サーバー URL
 // ─────────────────────────────────────────────
 const API = (new URLSearchParams(location.search).get('api') || '').replace(/\/$/, '');
-const USE_API = !!API;
 
 const PMTILES_URL = 'roads.pmtiles';
-const NET_BIN_URL = 'net.bin';
 const RANK_COLORS = [
   '#ff0000','#ff4000','#ff8000','#ffc000',
   '#ffff00','#c0ff00','#00cc00','#00cc80','#00cccc','#440055',
@@ -165,94 +154,32 @@ const RANK_LABELS = [
   '50〜60分','60〜70分','70〜80分','80〜90分','90分超',
 ];
 
-// ─────────────────────────────────────────────
-// バックエンド初期化
-// ─────────────────────────────────────────────
-let ready = false;
+// API 未設定時はバナーを表示
+if (!API) {
+  const banner = document.getElementById('api-banner');
+  banner.style.display = '';
+  banner.innerHTML = `
+    <b>⚙ API サーバーが未設定です</b><br>
+    <code>?api=https://your-api-server.com</code><br>
+    を URL に付けてアクセスしてください。`;
+}
 
-if (USE_API) {
-  // API サーバーモード
-  const bar = document.getElementById('loading-bar');
-  const msg = document.getElementById('loading-msg');
-  msg.textContent = `API: ${API} に接続中...`;
+// API の準備確認
+let ready = false;
+if (API) {
   fetch(`${API}/healthz`)
     .then(r => r.json())
     .then(d => {
       if (d.graph_loaded) {
         ready = true;
-        bar.style.display = 'none';
         console.log(`[api] connected: ${API}`);
-      } else {
-        msg.textContent = 'グラフ未ロード。サーバーを再起動してください。';
       }
     })
-    .catch(() => { msg.textContent = `API サーバーに接続できません: ${API}`; });
-} else {
-  // Web Worker サーバーレスモード
-  const worker = new Worker('worker.js');
-  worker.postMessage({ type: 'load', url: NET_BIN_URL });
-  worker.onmessage = ({ data }) => {
-    if (data.type === 'ready') {
-      ready = true;
-      document.getElementById('loading-bar').style.display = 'none';
-      console.log(`[worker] ready: ${data.nLinks.toLocaleString()} links, load: ${data.loadMs}ms`);
-      return;
-    }
-    if (data.type === 'reachability_result') { onReachabilityResult(data); return; }
-    if (data.type === 'route_result')        { onRouteResult(data); return; }
-    if (data.type === 'error') {
-      document.getElementById('loading-msg').textContent = `エラー: ${data.message}`;
-      document.querySelector('.spinner').style.display = 'none';
-    }
-  };
-  window._worker = worker;
-}
-
-// ─────────────────────────────────────────────
-// バックエンド共通インターフェース
-// ─────────────────────────────────────────────
-async function computeReachability(lat, lon, max_min, mode) {
-  if (USE_API) {
-    const t0 = performance.now();
-    const res = await fetch(`${API}/reachability`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lon, max_min, mode }),
+    .catch(() => {
+      const b = document.getElementById('api-banner');
+      b.style.display = '';
+      b.innerHTML = `<b>⚠ API サーバーに接続できません:</b><br><code>${API}</code>`;
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    data.meta.calc_ms = Math.round(performance.now() - t0);
-    return data;
-  } else {
-    return new Promise(resolve => {
-      window._worker.onmessage = ({ data }) => {
-        if (data.type === 'reachability_result') resolve(data);
-      };
-      window._worker.postMessage({ type: 'reachability', lat, lon, max_min, mode });
-    });
-  }
-}
-
-async function computeRoute(orig_lat, orig_lon, dest_lat, dest_lon, mode) {
-  if (USE_API) {
-    const t0 = performance.now();
-    const res = await fetch(`${API}/route`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    data.meta.calc_ms = Math.round(performance.now() - t0);
-    return data;
-  } else {
-    return new Promise(resolve => {
-      window._worker.onmessage = ({ data }) => {
-        if (data.type === 'route_result') resolve(data);
-      };
-      window._worker.postMessage({ type: 'route', orig_lat, orig_lon, dest_lat, dest_lon, mode });
-    });
-  }
 }
 
 // ─────────────────────────────────────────────
@@ -331,6 +258,15 @@ function makeMarkerEl(color) {
   return el;
 }
 
+function clearMarkers() {
+  if (origMarker) { origMarker.remove(); origMarker = null; }
+  if (destMarker) { destMarker.remove(); destMarker = null; }
+  origLatLon = null;
+  destLatLon = null;
+  document.getElementById('btn-reach').disabled = true;
+  document.getElementById('btn-route').disabled = true;
+}
+
 map.on('click', ({ lngLat: { lng, lat } }) => {
   origLatLon = [lat, lng];
   if (origMarker) origMarker.remove();
@@ -375,10 +311,10 @@ function clearAllStates() {
 }
 
 // ─────────────────────────────────────────────
-// 到達圏リクエスト
+// 到達圏
 // ─────────────────────────────────────────────
 document.getElementById('btn-reach').addEventListener('click', async () => {
-  if (!origLatLon || !ready) return;
+  if (!origLatLon || !API) return;
   const [lat, lon] = origLatLon;
   const mode    = document.getElementById('reach-mode').value;
   const max_min = parseFloat(rangeEl.value);
@@ -389,32 +325,30 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
   document.getElementById('btn-reach').disabled = true;
 
   try {
-    const data = await computeReachability(lat, lon, max_min, mode);
-    onReachabilityResult(data);
-  } catch (e) {
-    status.className = 'status err';
-    status.textContent = `エラー: ${e.message}`;
-    document.getElementById('btn-reach').disabled = false;
-  }
-});
+    const t0  = Date.now();
+    const res = await fetch(`${API}/reachability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon, max_min, mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const fetchMs = Date.now() - t0;
 
-async function onReachabilityResult(data) {
-  const status = document.getElementById('status-reach');
-  try {
     await clearAllStates();
-    const t1 = performance.now();
+    const t1 = Date.now();
     for (const [id, distMin] of Object.entries(data.links)) {
       map.setFeatureState(
         { source: 'roads', sourceLayer: 'roads', id: parseInt(id) },
         { dist_rank: Math.min(Math.floor(distMin / 10), 9) }
       );
     }
-    const stateMs = Math.round(performance.now() - t1);
+    const stateMs = Date.now() - t1;
 
-    const { snap_m, reachable_links, calc_ms } = data.meta;
+    const { snap_m, reachable_links } = data.meta;
     status.className = 'status ok';
     status.textContent =
-      `${reachable_links.toLocaleString()}本 | 計算:${calc_ms}ms | 描画:${stateMs}ms | snap:${snap_m}m`;
+      `${reachable_links.toLocaleString()}本 | API:${fetchMs}ms | 描画:${stateMs}ms | snap:${snap_m}m`;
     document.getElementById('legend-reach').style.display = '';
   } catch (e) {
     status.className = 'status err';
@@ -422,15 +356,15 @@ async function onReachabilityResult(data) {
   } finally {
     document.getElementById('btn-reach').disabled = false;
   }
-}
+});
 
 // ─────────────────────────────────────────────
-// 経路リクエスト
+// 経路探索
 // ─────────────────────────────────────────────
 let prevRouteIds = [];
 
 document.getElementById('btn-route').addEventListener('click', async () => {
-  if (!origLatLon || !destLatLon || !ready) return;
+  if (!origLatLon || !destLatLon || !API) return;
   const [orig_lat, orig_lon] = origLatLon;
   const [dest_lat, dest_lon] = destLatLon;
   const mode   = document.getElementById('route-mode').value;
@@ -441,18 +375,16 @@ document.getElementById('btn-route').addEventListener('click', async () => {
   document.getElementById('btn-route').disabled = true;
 
   try {
-    const data = await computeRoute(orig_lat, orig_lon, dest_lat, dest_lon, mode);
-    onRouteResult(data);
-  } catch (e) {
-    status.className = 'status err';
-    status.textContent = `エラー: ${e.message}`;
-    document.getElementById('btn-route').disabled = false;
-  }
-});
+    const t0  = Date.now();
+    const res = await fetch(`${API}/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const fetchMs = Date.now() - t0;
 
-function onRouteResult(data) {
-  const status = document.getElementById('status-route');
-  try {
     for (const id of prevRouteIds) {
       map.setFeatureState(
         { source: 'roads', sourceLayer: 'roads', id },
@@ -461,22 +393,22 @@ function onRouteResult(data) {
     }
     prevRouteIds = data.link_ids;
 
-    const t1 = performance.now();
+    const t1 = Date.now();
     for (const id of data.link_ids) {
       map.setFeatureState(
         { source: 'roads', sourceLayer: 'roads', id },
         { is_route: true }
       );
     }
-    const stateMs = Math.round(performance.now() - t1);
+    const stateMs = Date.now() - t1;
 
     if (data.meta.error) {
       status.className = 'status err';
       status.textContent = data.meta.error;
     } else {
-      const { dist_min, link_count, calc_ms } = data.meta;
+      const { dist_min, link_count } = data.meta;
       status.className = 'status ok';
-      status.textContent = `${dist_min}分 / ${link_count}本 | 計算:${calc_ms}ms | 描画:${stateMs}ms`;
+      status.textContent = `${dist_min}分 / ${link_count}本 | API:${fetchMs}ms | 描画:${stateMs}ms`;
     }
   } catch (e) {
     status.className = 'status err';
@@ -484,20 +416,11 @@ function onRouteResult(data) {
   } finally {
     document.getElementById('btn-route').disabled = false;
   }
-}
+});
 
 // ─────────────────────────────────────────────
 // クリアボタン
 // ─────────────────────────────────────────────
-function clearMarkers() {
-  if (origMarker) { origMarker.remove(); origMarker = null; }
-  if (destMarker) { destMarker.remove(); destMarker = null; }
-  origLatLon = null;
-  destLatLon = null;
-  document.getElementById('btn-reach').disabled = true;
-  document.getElementById('btn-route').disabled = true;
-}
-
 document.getElementById('btn-clear-reach').addEventListener('click', async () => {
   await clearAllStates();
   clearMarkers();
