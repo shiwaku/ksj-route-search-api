@@ -175,6 +175,7 @@ map.on('load', () => {
   map.addSource('roads', {
     type: 'vector',
     url: `pmtiles://${PMTILES}`,
+    promoteId: { 'roads': 'link_id' },  // setFeatureState に必要
   });
 
   // 全道路（背景・グレー）
@@ -295,6 +296,7 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
   document.getElementById('btn-reach').disabled = true;
 
   try {
+    if (!API) throw new Error('?api= パラメータで API サーバー URL を指定してください');
     const t0  = Date.now();
     const res = await fetch(`${API}/reachability`, {
       method: 'POST',
@@ -345,6 +347,7 @@ document.getElementById('btn-route').addEventListener('click', async () => {
   document.getElementById('btn-route').disabled = true;
 
   try {
+    if (!API) throw new Error('?api= パラメータで API サーバー URL を指定してください');
     const t0  = Date.now();
     const res = await fetch(`${API}/route`, {
       method: 'POST',
