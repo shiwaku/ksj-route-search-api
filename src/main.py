@@ -67,6 +67,11 @@ def viewer_index():
 def viewer_pale():
     return FileResponse(str(_viewer_dir / "pale.json"))
 
+@app.get("/roads.pmtiles", include_in_schema=False)
+def viewer_pmtiles():
+    return FileResponse(str(_ROOT / "docs/roads.pmtiles"),
+                        media_type="application/octet-stream")
+
 
 # ─────────────────────────────────────────────
 # リクエストモデル

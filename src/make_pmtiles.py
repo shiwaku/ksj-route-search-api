@@ -26,7 +26,7 @@ import geopandas as gpd
 
 REPO_ROOT    = Path(__file__).parent.parent
 DEFAULT_LINKS = str(REPO_ROOT / "network/saitama/KSJ_N13-24_saitama_all_道路リンク.parquet")
-DEFAULT_OUT   = str(REPO_ROOT / "network/saitama/roads.pmtiles")
+DEFAULT_OUT   = str(REPO_ROOT / "docs/roads.pmtiles")
 
 
 def main():

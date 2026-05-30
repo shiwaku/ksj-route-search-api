@@ -20,6 +20,7 @@ jobs:
         run: |
           cp viewer/index.html docs/index.html
           cp viewer/pale.json  docs/pale.json
+          # roads.pmtiles は docs/ に直接コミット済み（viewer/ には含めない）
 
       - name: Commit docs/
         run: |

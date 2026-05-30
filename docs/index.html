@@ -123,9 +123,7 @@
 // ─────────────────────────────────────────────
 const params   = new URLSearchParams(location.search);
 const API      = (params.get('api') || '').replace(/\/$/, '');
-const PMTILES  = params.get('pmtiles')
-              || (API ? `${API}/static/network/saitama/roads.pmtiles`
-                      : '/static/network/saitama/roads.pmtiles');
+const PMTILES  = params.get('pmtiles') || 'roads.pmtiles';
 
 // API が未設定のときバナーを表示
 if (!API) {
