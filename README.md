@@ -1,10 +1,53 @@
 # Route Search API
 
-国土数値情報（KSJ）道路データを使った経路探索・到達圏 Web API。
+国土数値情報（KSJ）道路データを使った経路探索・到達圏 Web ビューワー・API。
 
 **ビューワー**: https://shiwaku.github.io/ksj-route-search-api/
 
-## API
+道路データ：国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85
+
+---
+
+## 動作モード
+
+| モード | 概要 | 使い方 |
+|---|---|---|
+| **サーバーレス（デフォルト）** | ブラウザ内 Web Worker で Dijkstra を実行。サーバー不要 | URL パラメータなし |
+| **API サーバー** | FastAPI サーバーで Dijkstra を実行。大規模ネットワーク向け | `?api=https://your-api.com` |
+
+---
+
+## ビューワーの使い方
+
+### サーバーレスモード（デフォルト）
+
+```
+https://shiwaku.github.io/ksj-route-search-api/
+```
+
+`net.bin`（23.5MB）をダウンロードしてブラウザ内で処理。追加の設定不要。
+
+### API サーバーモード
+
+```
+https://shiwaku.github.io/ksj-route-search-api/?api=https://your-api-server.com
+```
+
+FastAPI サーバーの URL を `?api=` パラメータで指定する。
+
+### 操作方法
+
+| 操作 | 内容 |
+|---|---|
+| 左クリック | 始点を設定（緑マーカー） |
+| 右クリック | 終点を設定（赤マーカー・経路探索タブ） |
+| 「到達圏を表示」 | 始点から N 分以内の道路を色分け表示 |
+| 「経路を表示」 | 始点→終点の最短経路を表示 |
+| 「クリア」 | 表示結果をリセット |
+
+---
+
+## API エンドポイント（API サーバーモード時）
 
 | エンドポイント | 説明 |
 |---|---|
@@ -20,63 +63,111 @@
 
 レスポンス: `{ "links": {"link_id": dist_min, ...}, "meta": {...} }`
 
+`mode`: `"vehicle"`（車）または `"walk"`（徒歩 3.6 km/h）
+
 ### POST /route
 
 ```json
-{ "orig_lat": 35.8578, "orig_lon": 139.6490, "dest_lat": 36.0420, "dest_lon": 139.4006, "mode": "vehicle" }
+{ "orig_lat": 35.8578, "orig_lon": 139.6490,
+  "dest_lat": 36.0420, "dest_lon": 139.4006, "mode": "vehicle" }
 ```
 
 レスポンス: `{ "link_ids": [123, 456, ...], "meta": { "dist_min": 53.4 } }`
 
-## ビューワーの使い方
+---
 
-GitHub Pages で公開したビューワーは、API サーバーの URL を `?api=` パラメータで指定します。
-
-```
-https://shiwaku.github.io/ksj-route-search-api/?api=https://your-api-server.com
-```
-
-PMTiles を別途 S3 等に置く場合:
-
-```
-?api=https://your-api&pmtiles=https://your-bucket.s3.amazonaws.com/roads.pmtiles
-```
-
-## ローカル起動
+## ローカル起動（FastAPI サーバーモード）
 
 ```bash
 # 依存インストール
 pip install -r requirements.txt
 
-# PMTiles 生成（初回のみ）
+# ネットワークデータを配置（gitignored）
+# network/saitama/ に道路リンク・ノード parquet を置く
+
+# PMTiles 生成（初回のみ・tippecanoe 必要）
 python3 src/make_pmtiles.py
+
+# バイナリネットワーク生成（初回のみ・サーバーレス用）
+python3 src/make_network_bin.py
 
 # サーバー起動
 uvicorn src.main:app --host 0.0.0.0 --port 8080
 
-# ビューワー
-open http://localhost:8080/?api=http://localhost:8080
+# ビューワー（API モード）
+# ブラウザで http://localhost:8080/?api=http://localhost:8080 を開く
 ```
 
-## ネットワーク
+---
 
-`network/saitama/` に道路リンク・ノード parquet を配置（gitignored）。
+## ファイル構成
+
+```
+docs/
+  index.html        ビューワー（GitHub Pages）
+  pale.json         背景地図スタイル（国土地理院）
+  roads.pmtiles     道路ネットワーク PMTiles（94MB・表示用）
+  net.bin           道路グラフバイナリ（23.5MB・サーバーレス Dijkstra 用）
+  worker.js         Web Worker（グラフ構築・Dijkstra）
+
+src/
+  main.py           FastAPI アプリ
+  graph.py          RouterGraph（scipy Dijkstra）
+  make_pmtiles.py   道路リンク parquet → PMTiles 変換
+  make_network_bin.py  道路リンク parquet → net.bin 変換（サーバーレス用）
+  benchmark.py      ライブラリ別速度比較
+
+network/saitama/    gitignored（要配置）
+  KSJ_N13-24_saitama_all_道路リンク.parquet  (61MB)
+  KSJ_N13-24_saitama_all_道路ノード.parquet  (18MB)
+```
+
+---
+
+## ネットワークデータの生成
 
 ```bash
-# 国土数値情報（N13-24）GeoJSON から生成する場合:
-#   python3 src/ksj_to_network_csv.py --meshes 5338,5339,5438,5439 --case saitama_all --pref 埼玉県
+# 国土数値情報（N13-24）GeoJSON から生成:
+python3 src/ksj_to_network_csv.py \
+  --meshes 5338,5339,5438,5439 --case saitama_all --pref 埼玉県
 # ※ GeoJSON は https://nlftp.mlit.go.jp/ksj/ からダウンロード
 ```
 
 | ファイル | 内容 |
 |---|---|
-| `KSJ_N13-24_saitama_all_道路リンク.parquet` | 949,637 本（全道路） |
+| `KSJ_N13-24_saitama_all_道路リンク.parquet` | 949,637 本（全道路・フィルターなし） |
 | `KSJ_N13-24_saitama_all_道路ノード.parquet` | 706,418 件 |
 
-## パフォーマンス（saitama_all）
+---
+
+## パフォーマンス（saitama_all・埼玉県）
+
+### サーバーレスモード（ブラウザ）
+
+| 処理 | 時間 |
+|---|---|
+| net.bin 初回ダウンロード | 約 2〜5 秒（キャッシュ後は不要） |
+| グラフ構築（Worker） | 約 3〜5 秒 |
+| 到達圏（vehicle 30 分） | 約 0.5 秒 |
+| 経路探索 | 約 0.2 秒 |
+
+### API サーバーモード（FastAPI）
 
 | 処理 | 時間 |
 |---|---|
 | 起動時グラフ構築 | 約 25 秒（1 回のみ） |
 | `/reachability` vehicle 30 分 | 約 0.6 s |
 | `/route` vehicle | 約 0.1 s |
+
+---
+
+## Xserver へのデプロイ
+
+詳細は [SERVER_DEPLOY.md](SERVER_DEPLOY.md) を参照。
+
+---
+
+## 制約
+
+- **一方通行未考慮**: 国土数値情報に一方通行フィールドなし（全道路双方向）
+- **対象エリア**: デフォルトは埼玉県（saitama_all）
