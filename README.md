@@ -2,8 +2,6 @@
 
 国土数値情報（KSJ）道路データを使った経路探索・到達圏 Web ビューワー・API。
 
-**ビューワー**: https://shiwaku.github.io/ksj-route-search-api/
-
 道路データ：国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85
 
 ---
