@@ -345,6 +345,7 @@ rangeEl.addEventListener('input', () => { rangeVal.textContent = rangeEl.value; 
 // ─────────────────────────────────────────────
 function clearAllStates() {
   map.removeFeatureState({ source: 'roads', sourceLayer: 'roads' });
+  return new Promise(r => requestAnimationFrame(r));
 }
 
 // ─────────────────────────────────────────────
@@ -371,10 +372,10 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
   }
 });
 
-function onReachabilityResult(data) {
+async function onReachabilityResult(data) {
   const status = document.getElementById('status-reach');
   try {
-    clearAllStates();
+    await clearAllStates();
     const t1 = performance.now();
     for (const [id, distMin] of Object.entries(data.links)) {
       map.setFeatureState(
