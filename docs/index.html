@@ -18,13 +18,16 @@
     }
     #panel h1 { font-size: 14px; font-weight: bold; padding: 12px 14px 8px; border-bottom: 1px solid #eee; }
 
-    /* 設定バナー */
-    #cfg-banner {
+    #loading-bar {
       background: #fff8e1; border-bottom: 1px solid #ffe082;
-      padding: 8px 12px; font-size: 11px; line-height: 1.6; display: none;
+      padding: 8px 12px; font-size: 11px; display: flex; align-items: center; gap: 8px;
     }
-    #cfg-banner a { color: #0060df; text-decoration: none; }
-    #cfg-banner code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 10px; }
+    .spinner {
+      width: 14px; height: 14px; border: 2px solid #ddd;
+      border-top-color: #0060df; border-radius: 50%;
+      animation: spin .8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .tabs { display: flex; border-bottom: 1px solid #ddd; }
     .tab {
@@ -65,14 +68,16 @@
 <div id="map"></div>
 <div id="panel">
   <h1>経路探索・到達圏ビューワー</h1>
-  <div id="cfg-banner"></div>
+  <div id="loading-bar">
+    <div class="spinner"></div>
+    <span id="loading-msg">道路ネットワーク読み込み中...</span>
+  </div>
 
   <div class="tabs">
     <button class="tab active" data-pane="pane-reach">到達圏</button>
     <button class="tab"        data-pane="pane-route">経路</button>
   </div>
 
-  <!-- 到達圏パネル -->
   <div id="pane-reach" class="pane active">
     <div>
       <label>移動モード</label>
@@ -97,7 +102,6 @@
     </div>
   </div>
 
-  <!-- 経路パネル -->
   <div id="pane-route" class="pane">
     <div>
       <label>移動モード</label>
@@ -117,30 +121,10 @@
 
 <script>
 // ─────────────────────────────────────────────
-// URL パラメータから設定を読む
-//   ?api=https://your-api.example.com   ← FastAPI サーバー URL
-//   ?pmtiles=https://...roads.pmtiles   ← PMTiles URL
-// ─────────────────────────────────────────────
-const params   = new URLSearchParams(location.search);
-const API      = (params.get('api') || '').replace(/\/$/, '');
-const PMTILES  = params.get('pmtiles') || 'roads.pmtiles';
-
-// API が未設定のときバナーを表示
-if (!API) {
-  const banner = document.getElementById('cfg-banner');
-  banner.style.display = '';
-  banner.innerHTML = `
-    <b>⚙ API サーバーが未設定です</b><br>
-    ローカルで起動している場合は以下の URL を使用してください:<br>
-    <a href="?api=http://localhost:8080">?api=http://localhost:8080</a><br><br>
-    クラウドにデプロイ済みの場合:<br>
-    <code>?api=https://your-api.example.com</code>
-  `;
-}
-
-// ─────────────────────────────────────────────
 // 定数
 // ─────────────────────────────────────────────
+const PMTILES_URL = 'roads.pmtiles';
+const NET_BIN_URL = 'net.bin';
 const RANK_COLORS = [
   '#ff0000','#ff4000','#ff8000','#ffc000',
   '#ffff00','#c0ff00','#00cc00','#00cc80','#00cccc','#440055',
@@ -149,17 +133,36 @@ const RANK_LABELS = [
   '0〜10分','10〜20分','20〜30分','30〜40分','40〜50分',
   '50〜60分','60〜70分','70〜80分','80〜90分','90分超',
 ];
-const ROUTE_COLOR = '#0055ff';
 
 // ─────────────────────────────────────────────
-// PMTiles プロトコル登録
+// Worker 起動
+// ─────────────────────────────────────────────
+const worker = new Worker('worker.js');
+let workerReady = false;
+
+worker.postMessage({ type: 'load', url: NET_BIN_URL });
+
+worker.onmessage = ({ data }) => {
+  if (data.type === 'ready') {
+    workerReady = true;
+    document.getElementById('loading-bar').style.display = 'none';
+    console.log(`[worker] ready: ${data.nLinks.toLocaleString()} links, ${data.nNodes.toLocaleString()} nodes, load: ${data.loadMs}ms`);
+    return;
+  }
+  if (data.type === 'reachability_result') { onReachabilityResult(data); return; }
+  if (data.type === 'route_result')        { onRouteResult(data); return; }
+  if (data.type === 'error') {
+    document.getElementById('loading-msg').textContent = `エラー: ${data.message}`;
+    document.querySelector('.spinner').style.display = 'none';
+  }
+};
+
+// ─────────────────────────────────────────────
+// PMTiles プロトコル登録・マップ初期化
 // ─────────────────────────────────────────────
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile.bind(protocol));
 
-// ─────────────────────────────────────────────
-// マップ初期化
-// ─────────────────────────────────────────────
 const map = new maplibregl.Map({
   container: 'map',
   style: 'pale.json',
@@ -168,17 +171,13 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.NavigationControl(), 'top-left');
 
-// ─────────────────────────────────────────────
-// 道路ネットワーク PMTiles を追加
-// ─────────────────────────────────────────────
 map.on('load', () => {
   map.addSource('roads', {
     type: 'vector',
-    url: `pmtiles://${PMTILES}`,
-    promoteId: { 'roads': 'link_id' },  // setFeatureState に必要
+    url: `pmtiles://${PMTILES_URL}`,
+    promoteId: { 'roads': 'link_id' },
   });
 
-  // 全道路（背景・グレー）
   map.addLayer({
     id: 'roads-base',
     type: 'line',
@@ -187,7 +186,6 @@ map.on('load', () => {
     paint: { 'line-color': '#bbbbbb', 'line-width': 0.4, 'line-opacity': 0.6 },
   });
 
-  // 到達圏（feature-state で色付け）
   map.addLayer({
     id: 'roads-reach',
     type: 'line',
@@ -207,14 +205,13 @@ map.on('load', () => {
     },
   });
 
-  // 経路（feature-state で色付け）
   map.addLayer({
     id: 'roads-route',
     type: 'line',
     source: 'roads',
     'source-layer': 'roads',
     paint: {
-      'line-color': ROUTE_COLOR,
+      'line-color': '#0055ff',
       'line-width': ['case', ['==', ['feature-state', 'is_route'], true], 4, 0],
       'line-opacity': 0.9,
     },
@@ -241,8 +238,8 @@ map.on('click', ({ lngLat: { lng, lat } }) => {
   if (origMarker) origMarker.remove();
   origMarker = new maplibregl.Marker({ element: makeMarkerEl('#00aa44') })
     .setLngLat([lng, lat]).addTo(map);
-  document.getElementById('btn-reach').disabled = false;
-  document.getElementById('btn-route').disabled = !destLatLon;
+  if (workerReady) document.getElementById('btn-reach').disabled = false;
+  if (workerReady && destLatLon) document.getElementById('btn-route').disabled = false;
 });
 
 map.on('contextmenu', (e) => {
@@ -252,7 +249,7 @@ map.on('contextmenu', (e) => {
   if (destMarker) destMarker.remove();
   destMarker = new maplibregl.Marker({ element: makeMarkerEl('#dd2222') })
     .setLngLat([lng, lat]).addTo(map);
-  document.getElementById('btn-route').disabled = !origLatLon;
+  if (workerReady && origLatLon) document.getElementById('btn-route').disabled = false;
 });
 
 // ─────────────────────────────────────────────
@@ -267,25 +264,22 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-// ─────────────────────────────────────────────
-// スライダー
-// ─────────────────────────────────────────────
 const rangeEl  = document.getElementById('reach-maxmin');
 const rangeVal = document.getElementById('reach-maxmin-val');
 rangeEl.addEventListener('input', () => { rangeVal.textContent = rangeEl.value; });
 
 // ─────────────────────────────────────────────
-// feature-state 操作
+// feature-state クリア
 // ─────────────────────────────────────────────
 function clearAllStates() {
   map.removeFeatureState({ source: 'roads', sourceLayer: 'roads' });
 }
 
 // ─────────────────────────────────────────────
-// 到達圏
+// 到達圏リクエスト
 // ─────────────────────────────────────────────
-document.getElementById('btn-reach').addEventListener('click', async () => {
-  if (!origLatLon || !API) return;
+document.getElementById('btn-reach').addEventListener('click', () => {
+  if (!origLatLon || !workerReady) return;
   const [lat, lon] = origLatLon;
   const mode    = document.getElementById('reach-mode').value;
   const max_min = parseFloat(rangeEl.value);
@@ -295,32 +289,26 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
   status.textContent = '計算中...';
   document.getElementById('btn-reach').disabled = true;
 
-  try {
-    if (!API) throw new Error('?api= パラメータで API サーバー URL を指定してください');
-    const t0  = Date.now();
-    const res = await fetch(`${API}/reachability`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lon, max_min, mode }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const fetchMs = Date.now() - t0;
+  worker.postMessage({ type: 'reachability', lat, lon, max_min, mode });
+});
 
+function onReachabilityResult(data) {
+  const status = document.getElementById('status-reach');
+  try {
     clearAllStates();
-    const t1 = Date.now();
+    const t1 = performance.now();
     for (const [id, distMin] of Object.entries(data.links)) {
       map.setFeatureState(
         { source: 'roads', sourceLayer: 'roads', id: parseInt(id) },
         { dist_rank: Math.min(Math.floor(distMin / 10), 9) }
       );
     }
-    const stateMs = Date.now() - t1;
+    const stateMs = Math.round(performance.now() - t1);
 
-    const { snap_m, reachable_links } = data.meta;
+    const { snap_m, reachable_links, calc_ms } = data.meta;
     status.className = 'status ok';
     status.textContent =
-      `${reachable_links.toLocaleString()}本 | API:${fetchMs}ms | 描画:${stateMs}ms | snap:${snap_m}m`;
+      `${reachable_links.toLocaleString()}本 | 計算:${calc_ms}ms | 描画:${stateMs}ms | snap:${snap_m}m`;
     document.getElementById('legend-reach').style.display = '';
   } catch (e) {
     status.className = 'status err';
@@ -328,15 +316,15 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
   } finally {
     document.getElementById('btn-reach').disabled = false;
   }
-});
+}
 
 // ─────────────────────────────────────────────
-// 経路
+// 経路リクエスト
 // ─────────────────────────────────────────────
 let prevRouteIds = [];
 
-document.getElementById('btn-route').addEventListener('click', async () => {
-  if (!origLatLon || !destLatLon || !API) return;
+document.getElementById('btn-route').addEventListener('click', () => {
+  if (!origLatLon || !destLatLon || !workerReady) return;
   const [orig_lat, orig_lon] = origLatLon;
   const [dest_lat, dest_lon] = destLatLon;
   const mode   = document.getElementById('route-mode').value;
@@ -346,19 +334,12 @@ document.getElementById('btn-route').addEventListener('click', async () => {
   status.textContent = '計算中...';
   document.getElementById('btn-route').disabled = true;
 
-  try {
-    if (!API) throw new Error('?api= パラメータで API サーバー URL を指定してください');
-    const t0  = Date.now();
-    const res = await fetch(`${API}/route`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const fetchMs = Date.now() - t0;
+  worker.postMessage({ type: 'route', orig_lat, orig_lon, dest_lat, dest_lon, mode });
+});
 
-    // 前回の経路をクリア
+function onRouteResult(data) {
+  const status = document.getElementById('status-route');
+  try {
     for (const id of prevRouteIds) {
       map.setFeatureState(
         { source: 'roads', sourceLayer: 'roads', id },
@@ -367,22 +348,22 @@ document.getElementById('btn-route').addEventListener('click', async () => {
     }
     prevRouteIds = data.link_ids;
 
-    const t1 = Date.now();
+    const t1 = performance.now();
     for (const id of data.link_ids) {
       map.setFeatureState(
         { source: 'roads', sourceLayer: 'roads', id },
         { is_route: true }
       );
     }
-    const stateMs = Date.now() - t1;
+    const stateMs = Math.round(performance.now() - t1);
 
     if (data.meta.error) {
       status.className = 'status err';
       status.textContent = data.meta.error;
     } else {
-      const { dist_min, link_count } = data.meta;
+      const { dist_min, link_count, calc_ms } = data.meta;
       status.className = 'status ok';
-      status.textContent = `${dist_min}分 / ${link_count}本 | API:${fetchMs}ms | 描画:${stateMs}ms`;
+      status.textContent = `${dist_min}分 / ${link_count}本 | 計算:${calc_ms}ms | 描画:${stateMs}ms`;
     }
   } catch (e) {
     status.className = 'status err';
@@ -390,7 +371,7 @@ document.getElementById('btn-route').addEventListener('click', async () => {
   } finally {
     document.getElementById('btn-route').disabled = false;
   }
-});
+}
 
 // ─────────────────────────────────────────────
 // 凡例
