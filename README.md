@@ -12,28 +12,28 @@
 
 | モード | 概要 | 使い方 |
 |---|---|---|
-| **サーバーレス（デフォルト）** | ブラウザ内 Web Worker で Dijkstra を実行。サーバー不要 | URL パラメータなし |
-| **API サーバー** | FastAPI サーバーで Dijkstra を実行。大規模ネットワーク向け | `?api=https://your-api.com` |
+| **API サーバーモード** | FastAPI サーバーで Dijkstra を実行。推奨 | `?api=https://your-api.com` |
+| **サーバーレスモード** | ブラウザ内 Web Worker で Dijkstra を実行。サーバー不要 | URL パラメータなし |
 
 ---
 
 ## ビューワーの使い方
 
-### サーバーレスモード（デフォルト）
+### API サーバーモード（推奨）
+
+```
+https://shiwaku.github.io/ksj-route-search-api/?api=https://shiworks2.xsrv.jp/api
+```
+
+FastAPI サーバーの URL を `?api=` パラメータで指定する。デプロイ手順は [SERVER_DEPLOY.md](SERVER_DEPLOY.md) を参照。
+
+### サーバーレスモード
 
 ```
 https://shiwaku.github.io/ksj-route-search-api/
 ```
 
-`net.bin`（23.5MB）をダウンロードしてブラウザ内で処理。追加の設定不要。
-
-### API サーバーモード
-
-```
-https://shiwaku.github.io/ksj-route-search-api/?api=https://your-api-server.com
-```
-
-FastAPI サーバーの URL を `?api=` パラメータで指定する。
+`net.bin`（23.5MB）をダウンロードしてブラウザ内で処理。`?api=` パラメータ省略時に動作。
 
 ### 操作方法
 
