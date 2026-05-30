@@ -63,8 +63,9 @@ open http://localhost:8080/?api=http://localhost:8080
 `network/saitama/` に道路リンク・ノード parquet を配置（gitignored）。
 
 ```bash
-# saitama_all（全道路・フィルターなし）を 06_TimesliceReachability-link からコピー
-cp ../06_TimesliceReachability-link/network/saitama/*.parquet network/saitama/
+# 国土数値情報（N13-24）GeoJSON から生成する場合:
+#   python3 src/ksj_to_network_csv.py --meshes 5338,5339,5438,5439 --case saitama_all --pref 埼玉県
+# ※ GeoJSON は https://nlftp.mlit.go.jp/ksj/ からダウンロード
 ```
 
 | ファイル | 内容 |

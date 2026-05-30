@@ -150,8 +150,9 @@ https://shiwaku.github.io/ksj-route-search-api/?api=https://your-api.example.com
 `network/saitama/` は gitignored。`06_TimesliceReachability-link/network/saitama/` からコピー。
 
 ```bash
-cp ../06_TimesliceReachability-link/network/saitama/KSJ_N13-24_saitama_all_*.parquet \
-   network/saitama/
+# 国土数値情報（N13-24）GeoJSON から生成:
+#   python3 src/ksj_to_network_csv.py --meshes 5338,5339,5438,5439 --case saitama_all --pref 埼玉県
+# ※ GeoJSON は https://nlftp.mlit.go.jp/ksj/ からダウンロード
 ```
 
 kanto_all など別エリアに切り替える場合は環境変数で指定:
