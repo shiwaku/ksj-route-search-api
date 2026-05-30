@@ -489,8 +489,18 @@ function onRouteResult(data) {
 // ─────────────────────────────────────────────
 // クリアボタン
 // ─────────────────────────────────────────────
+function clearMarkers() {
+  if (origMarker) { origMarker.remove(); origMarker = null; }
+  if (destMarker) { destMarker.remove(); destMarker = null; }
+  origLatLon = null;
+  destLatLon = null;
+  document.getElementById('btn-reach').disabled = true;
+  document.getElementById('btn-route').disabled = true;
+}
+
 document.getElementById('btn-clear-reach').addEventListener('click', async () => {
   await clearAllStates();
+  clearMarkers();
   document.getElementById('status-reach').className = 'status';
   document.getElementById('status-reach').textContent = '';
   document.getElementById('legend-reach').style.display = 'none';
@@ -504,6 +514,7 @@ document.getElementById('btn-clear-route').addEventListener('click', () => {
     );
   }
   prevRouteIds = [];
+  clearMarkers();
   document.getElementById('status-route').className = 'status';
   document.getElementById('status-route').textContent = '';
 });
