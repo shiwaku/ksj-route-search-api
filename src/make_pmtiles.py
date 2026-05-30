@@ -58,7 +58,8 @@ def main():
         "tippecanoe",
         "-Z6", "-z14",
         "-l", "roads",
-        "--use-attribute-for-id", "link_id",   # link_id をフィーチャ ID に昇格
+        "-y", "link_id",          # link_id プロパティのみ保持
+        "-r1",                    # フィーチャの間引きを無効化
         "--no-feature-limit",
         "--no-tile-size-limit",
         "--force",
