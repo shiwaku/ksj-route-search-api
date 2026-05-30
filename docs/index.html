@@ -58,6 +58,13 @@
     }
     button:hover { background: #003eaa; }
     button:disabled { background: #aaa; cursor: not-allowed; }
+    .btn-clear {
+      background: #fff; color: #c00; border: 1px solid #c00;
+      padding: 6px 8px; font-size: 12px; font-weight: normal;
+    }
+    .btn-clear:hover { background: #fff0f0; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row button:first-child { flex: 1; }
 
     .hint { color: #888; font-size: 11px; line-height: 1.6; }
     .status { font-size: 12px; color: #333; min-height: 18px; }
@@ -107,7 +114,10 @@
       </div>
     </div>
     <p class="hint">地図をクリックして始点を設定</p>
-    <button id="btn-reach" disabled>到達圏を表示</button>
+    <div class="btn-row">
+      <button id="btn-reach" disabled>到達圏を表示</button>
+      <button id="btn-clear-reach" class="btn-clear">クリア</button>
+    </div>
     <div id="status-reach" class="status"></div>
     <hr>
     <div class="legend" id="legend-reach" style="display:none">
@@ -127,7 +137,10 @@
       <b>左クリック</b>: 始点を設定<br>
       <b>右クリック</b>: 終点を設定
     </p>
-    <button id="btn-route" disabled>経路を表示</button>
+    <div class="btn-row">
+      <button id="btn-route" disabled>経路を表示</button>
+      <button id="btn-clear-route" class="btn-clear">クリア</button>
+    </div>
     <div id="status-route" class="status"></div>
   </div>
 </div>
@@ -472,6 +485,28 @@ function onRouteResult(data) {
     document.getElementById('btn-route').disabled = false;
   }
 }
+
+// ─────────────────────────────────────────────
+// クリアボタン
+// ─────────────────────────────────────────────
+document.getElementById('btn-clear-reach').addEventListener('click', async () => {
+  await clearAllStates();
+  document.getElementById('status-reach').className = 'status';
+  document.getElementById('status-reach').textContent = '';
+  document.getElementById('legend-reach').style.display = 'none';
+});
+
+document.getElementById('btn-clear-route').addEventListener('click', () => {
+  for (const id of prevRouteIds) {
+    map.setFeatureState(
+      { source: 'roads', sourceLayer: 'roads', id },
+      { is_route: false }
+    );
+  }
+  prevRouteIds = [];
+  document.getElementById('status-route').className = 'status';
+  document.getElementById('status-route').textContent = '';
+});
 
 // ─────────────────────────────────────────────
 // 凡例
