@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>経路探索・到達圏ビューワー</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <link  href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { display: flex; height: 100vh; font-family: sans-serif; font-size: 13px; }
+    #map { flex: 1; }
+
+    #panel {
+      width: 280px; background: #fff; display: flex; flex-direction: column;
+      box-shadow: -2px 0 8px rgba(0,0,0,.15); z-index: 1; overflow-y: auto;
+    }
+    #panel h1 { font-size: 14px; font-weight: bold; padding: 12px 14px 8px; border-bottom: 1px solid #eee; }
+
+    /* 設定バナー */
+    #cfg-banner {
+      background: #fff8e1; border-bottom: 1px solid #ffe082;
+      padding: 8px 12px; font-size: 11px; line-height: 1.6; display: none;
+    }
+    #cfg-banner a { color: #0060df; text-decoration: none; }
+    #cfg-banner code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 10px; }
+
+    .tabs { display: flex; border-bottom: 1px solid #ddd; }
+    .tab {
+      flex: 1; padding: 8px; border: none; background: #f5f5f5;
+      cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent;
+    }
+    .tab.active { background: #fff; border-bottom-color: #0060df; color: #0060df; font-weight: bold; }
+
+    .pane { padding: 12px 14px; display: none; flex-direction: column; gap: 10px; }
+    .pane.active { display: flex; }
+
+    label { font-weight: bold; color: #444; margin-bottom: 2px; display: block; }
+    select { width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+
+    .range-row { display: flex; align-items: center; gap: 8px; }
+    .range-row input { flex: 1; }
+    .range-val { width: 50px; text-align: right; font-weight: bold; color: #0060df; }
+
+    button {
+      padding: 8px; background: #0060df; color: #fff; border: none;
+      border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;
+    }
+    button:hover { background: #003eaa; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+
+    .hint { color: #888; font-size: 11px; line-height: 1.6; }
+    .status { font-size: 12px; color: #333; min-height: 18px; }
+    .status.err { color: #c00; }
+    .status.ok  { color: #080; }
+
+    hr { border: none; border-top: 1px solid #eee; }
+    .legend { display: flex; flex-direction: column; gap: 3px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+    .legend-swatch { width: 24px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>経路探索・到達圏ビューワー</h1>
+  <div id="cfg-banner"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-pane="pane-reach">到達圏</button>
+    <button class="tab"        data-pane="pane-route">経路</button>
+  </div>
+
+  <!-- 到達圏パネル -->
+  <div id="pane-reach" class="pane active">
+    <div>
+      <label>移動モード</label>
+      <select id="reach-mode">
+        <option value="vehicle">車</option>
+        <option value="walk">徒歩（3.6 km/h）</option>
+      </select>
+    </div>
+    <div>
+      <label>最大時間</label>
+      <div class="range-row">
+        <input type="range" id="reach-maxmin" min="5" max="120" value="30" step="5">
+        <span class="range-val"><span id="reach-maxmin-val">30</span>分</span>
+      </div>
+    </div>
+    <p class="hint">地図をクリックして始点を設定</p>
+    <button id="btn-reach" disabled>到達圏を表示</button>
+    <div id="status-reach" class="status"></div>
+    <hr>
+    <div class="legend" id="legend-reach" style="display:none">
+      <label>凡例（到達時間）</label>
+    </div>
+  </div>
+
+  <!-- 経路パネル -->
+  <div id="pane-route" class="pane">
+    <div>
+      <label>移動モード</label>
+      <select id="route-mode">
+        <option value="vehicle">車</option>
+        <option value="walk">徒歩（3.6 km/h）</option>
+      </select>
+    </div>
+    <p class="hint">
+      <b>左クリック</b>: 始点を設定<br>
+      <b>右クリック</b>: 終点を設定
+    </p>
+    <button id="btn-route" disabled>経路を表示</button>
+    <div id="status-route" class="status"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// URL パラメータから設定を読む
+//   ?api=https://your-api.example.com   ← FastAPI サーバー URL
+//   ?pmtiles=https://...roads.pmtiles   ← PMTiles URL
+// ─────────────────────────────────────────────
+const params   = new URLSearchParams(location.search);
+const API      = (params.get('api') || '').replace(/\/$/, '');
+const PMTILES  = params.get('pmtiles')
+              || (API ? `${API}/static/network/saitama/roads.pmtiles`
+                      : '/static/network/saitama/roads.pmtiles');
+
+// API が未設定のときバナーを表示
+if (!API) {
+  const banner = document.getElementById('cfg-banner');
+  banner.style.display = '';
+  banner.innerHTML = `
+    <b>⚙ API サーバーが未設定です</b><br>
+    ローカルで起動している場合は以下の URL を使用してください:<br>
+    <a href="?api=http://localhost:8080">?api=http://localhost:8080</a><br><br>
+    クラウドにデプロイ済みの場合:<br>
+    <code>?api=https://your-api.example.com</code>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// 定数
+// ─────────────────────────────────────────────
+const RANK_COLORS = [
+  '#ff0000','#ff4000','#ff8000','#ffc000',
+  '#ffff00','#c0ff00','#00cc00','#00cc80','#00cccc','#440055',
+];
+const RANK_LABELS = [
+  '0〜10分','10〜20分','20〜30分','30〜40分','40〜50分',
+  '50〜60分','60〜70分','70〜80分','80〜90分','90分超',
+];
+const ROUTE_COLOR = '#0055ff';
+
+// ─────────────────────────────────────────────
+// PMTiles プロトコル登録
+// ─────────────────────────────────────────────
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', protocol.tile.bind(protocol));
+
+// ─────────────────────────────────────────────
+// マップ初期化
+// ─────────────────────────────────────────────
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'pale.json',
+  center: [139.55, 35.95],
+  zoom: 10,
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-left');
+
+// ─────────────────────────────────────────────
+// 道路ネットワーク PMTiles を追加
+// ─────────────────────────────────────────────
+map.on('load', () => {
+  map.addSource('roads', {
+    type: 'vector',
+    url: `pmtiles://${PMTILES}`,
+  });
+
+  // 全道路（背景・グレー）
+  map.addLayer({
+    id: 'roads-base',
+    type: 'line',
+    source: 'roads',
+    'source-layer': 'roads',
+    paint: { 'line-color': '#bbbbbb', 'line-width': 0.4, 'line-opacity': 0.6 },
+  });
+
+  // 到達圏（feature-state で色付け）
+  map.addLayer({
+    id: 'roads-reach',
+    type: 'line',
+    source: 'roads',
+    'source-layer': 'roads',
+    paint: {
+      'line-color': [
+        'match', ['coalesce', ['feature-state', 'dist_rank'], -1],
+        0, RANK_COLORS[0], 1, RANK_COLORS[1], 2, RANK_COLORS[2],
+        3, RANK_COLORS[3], 4, RANK_COLORS[4], 5, RANK_COLORS[5],
+        6, RANK_COLORS[6], 7, RANK_COLORS[7], 8, RANK_COLORS[8],
+        9, RANK_COLORS[9],
+        'transparent',
+      ],
+      'line-width':   ['case', ['!=', ['feature-state', 'dist_rank'], null], 1.5, 0],
+      'line-opacity': 0.85,
+    },
+  });
+
+  // 経路（feature-state で色付け）
+  map.addLayer({
+    id: 'roads-route',
+    type: 'line',
+    source: 'roads',
+    'source-layer': 'roads',
+    paint: {
+      'line-color': ROUTE_COLOR,
+      'line-width': ['case', ['==', ['feature-state', 'is_route'], true], 4, 0],
+      'line-opacity': 0.9,
+    },
+  });
+
+  buildLegend();
+});
+
+// ─────────────────────────────────────────────
+// マーカー管理
+// ─────────────────────────────────────────────
+let origMarker = null, destMarker = null;
+let origLatLon = null, destLatLon = null;
+
+function makeMarkerEl(color) {
+  const el = document.createElement('div');
+  el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${color};
+    border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`;
+  return el;
+}
+
+map.on('click', ({ lngLat: { lng, lat } }) => {
+  origLatLon = [lat, lng];
+  if (origMarker) origMarker.remove();
+  origMarker = new maplibregl.Marker({ element: makeMarkerEl('#00aa44') })
+    .setLngLat([lng, lat]).addTo(map);
+  document.getElementById('btn-reach').disabled = false;
+  document.getElementById('btn-route').disabled = !destLatLon;
+});
+
+map.on('contextmenu', (e) => {
+  e.preventDefault();
+  const { lng, lat } = e.lngLat;
+  destLatLon = [lat, lng];
+  if (destMarker) destMarker.remove();
+  destMarker = new maplibregl.Marker({ element: makeMarkerEl('#dd2222') })
+    .setLngLat([lng, lat]).addTo(map);
+  document.getElementById('btn-route').disabled = !origLatLon;
+});
+
+// ─────────────────────────────────────────────
+// タブ切り替え
+// ─────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.pane).classList.add('active');
+  });
+});
+
+// ─────────────────────────────────────────────
+// スライダー
+// ─────────────────────────────────────────────
+const rangeEl  = document.getElementById('reach-maxmin');
+const rangeVal = document.getElementById('reach-maxmin-val');
+rangeEl.addEventListener('input', () => { rangeVal.textContent = rangeEl.value; });
+
+// ─────────────────────────────────────────────
+// feature-state 操作
+// ─────────────────────────────────────────────
+function clearAllStates() {
+  map.removeFeatureState({ source: 'roads', sourceLayer: 'roads' });
+}
+
+// ─────────────────────────────────────────────
+// 到達圏
+// ─────────────────────────────────────────────
+document.getElementById('btn-reach').addEventListener('click', async () => {
+  if (!origLatLon || !API) return;
+  const [lat, lon] = origLatLon;
+  const mode    = document.getElementById('reach-mode').value;
+  const max_min = parseFloat(rangeEl.value);
+  const status  = document.getElementById('status-reach');
+
+  status.className = 'status';
+  status.textContent = '計算中...';
+  document.getElementById('btn-reach').disabled = true;
+
+  try {
+    const t0  = Date.now();
+    const res = await fetch(`${API}/reachability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon, max_min, mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const fetchMs = Date.now() - t0;
+
+    clearAllStates();
+    const t1 = Date.now();
+    for (const [id, distMin] of Object.entries(data.links)) {
+      map.setFeatureState(
+        { source: 'roads', sourceLayer: 'roads', id: parseInt(id) },
+        { dist_rank: Math.min(Math.floor(distMin / 10), 9) }
+      );
+    }
+    const stateMs = Date.now() - t1;
+
+    const { snap_m, reachable_links } = data.meta;
+    status.className = 'status ok';
+    status.textContent =
+      `${reachable_links.toLocaleString()}本 | API:${fetchMs}ms | 描画:${stateMs}ms | snap:${snap_m}m`;
+    document.getElementById('legend-reach').style.display = '';
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `エラー: ${e.message}`;
+  } finally {
+    document.getElementById('btn-reach').disabled = false;
+  }
+});
+
+// ─────────────────────────────────────────────
+// 経路
+// ─────────────────────────────────────────────
+let prevRouteIds = [];
+
+document.getElementById('btn-route').addEventListener('click', async () => {
+  if (!origLatLon || !destLatLon || !API) return;
+  const [orig_lat, orig_lon] = origLatLon;
+  const [dest_lat, dest_lon] = destLatLon;
+  const mode   = document.getElementById('route-mode').value;
+  const status = document.getElementById('status-route');
+
+  status.className = 'status';
+  status.textContent = '計算中...';
+  document.getElementById('btn-route').disabled = true;
+
+  try {
+    const t0  = Date.now();
+    const res = await fetch(`${API}/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const fetchMs = Date.now() - t0;
+
+    // 前回の経路をクリア
+    for (const id of prevRouteIds) {
+      map.setFeatureState(
+        { source: 'roads', sourceLayer: 'roads', id },
+        { is_route: false }
+      );
+    }
+    prevRouteIds = data.link_ids;
+
+    const t1 = Date.now();
+    for (const id of data.link_ids) {
+      map.setFeatureState(
+        { source: 'roads', sourceLayer: 'roads', id },
+        { is_route: true }
+      );
+    }
+    const stateMs = Date.now() - t1;
+
+    if (data.meta.error) {
+      status.className = 'status err';
+      status.textContent = data.meta.error;
+    } else {
+      const { dist_min, link_count } = data.meta;
+      status.className = 'status ok';
+      status.textContent = `${dist_min}分 / ${link_count}本 | API:${fetchMs}ms | 描画:${stateMs}ms`;
+    }
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `エラー: ${e.message}`;
+  } finally {
+    document.getElementById('btn-route').disabled = false;
+  }
+});
+
+// ─────────────────────────────────────────────
+// 凡例
+// ─────────────────────────────────────────────
+function buildLegend() {
+  const el = document.getElementById('legend-reach');
+  RANK_COLORS.forEach((color, i) => {
+    const row = document.createElement('div');
+    row.className = 'legend-item';
+    row.innerHTML = `<div class="legend-swatch" style="background:${color}"></div><span>${RANK_LABELS[i]}</span>`;
+    el.appendChild(row);
+  });
+}
+</script>
+</body>
+</html>

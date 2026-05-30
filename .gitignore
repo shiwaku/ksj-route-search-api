@@ -1,0 +1,6 @@
+network/
+__pycache__/
+*.pyc
+.venv/
+# docs/ は GitHub Pages 用に含める（gitignore 除外）
+!docs/

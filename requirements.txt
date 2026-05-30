@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+geopandas
+pyarrow
+scipy
+numpy
+igraph
+rustworkx
