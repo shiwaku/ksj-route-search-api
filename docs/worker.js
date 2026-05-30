@@ -86,47 +86,46 @@ function nearestNode(lat, lon) {
 }
 
 // ─────────────────────────────────────────────
-// バイナリ最小ヒープ
+// バイナリ最小ヒープ（cost / node を別配列で管理）
 // ─────────────────────────────────────────────
 class MinHeap {
-  constructor() { this.h = []; }
-  get size() { return this.h.length; }
+  constructor() { this._c = []; this._n = []; }
+  get size() { return this._c.length; }
+
   push(cost, node) {
-    this.h.push(cost, node);
-    this._up(this.h.length / 2 - 1);
-  }
-  pop() {
-    const c = this.h[0], n = this.h[1];
-    const last = this.h.length - 2;
-    if (last > 0) {
-      this.h[0] = this.h[last]; this.h[1] = this.h[last + 1];
-      this.h.length = last;
-      this._down(0);
-    } else {
-      this.h.length = 0;
-    }
-    return { cost: c, node: n };
-  }
-  _up(i) {
-    const h = this.h;
+    this._c.push(cost);
+    this._n.push(node);
+    let i = this._c.length - 1;
     while (i > 0) {
-      const p = ((i - 1) >> 1) & ~0;  // parent (even index)
-      if (h[p] <= h[i]) break;
-      [h[p], h[i], h[p+1], h[i+1]] = [h[i], h[p], h[i+1], h[p+1]];
+      const p = (i - 1) >> 1;
+      if (this._c[p] <= this._c[i]) break;
+      [this._c[p], this._c[i]] = [this._c[i], this._c[p]];
+      [this._n[p], this._n[i]] = [this._n[i], this._n[p]];
       i = p;
     }
   }
-  _down(i) {
-    const h = this.h, n = h.length;
-    while (true) {
-      let m = i;
-      const l = i + 2, r = i + 4;
-      if (l < n && h[l] < h[m]) m = l;
-      if (r < n && h[r] < h[m]) m = r;
-      if (m === i) break;
-      [h[m], h[i], h[m+1], h[i+1]] = [h[i], h[m], h[i+1], h[m+1]];
-      i = m;
+
+  pop() {
+    const cost = this._c[0], node = this._n[0];
+    const last = this._c.length - 1;
+    if (last > 0) {
+      this._c[0] = this._c[last]; this._n[0] = this._n[last];
+      this._c.length = last;     this._n.length = last;
+      let i = 0;
+      while (true) {
+        let m = i;
+        const l = 2 * i + 1, r = 2 * i + 2;
+        if (l < this._c.length && this._c[l] < this._c[m]) m = l;
+        if (r < this._c.length && this._c[r] < this._c[m]) m = r;
+        if (m === i) break;
+        [this._c[m], this._c[i]] = [this._c[i], this._c[m]];
+        [this._n[m], this._n[i]] = [this._n[i], this._n[m]];
+        i = m;
+      }
+    } else {
+      this._c.length = 0; this._n.length = 0;
     }
+    return { cost, node };
   }
 }
 
