@@ -8,32 +8,13 @@
 
 ---
 
-## 動作モード
-
-| モード | 概要 | 使い方 |
-|---|---|---|
-| **API サーバーモード** | FastAPI サーバーで Dijkstra を実行。推奨 | `?api=https://your-api.com` |
-| **サーバーレスモード** | ブラウザ内 Web Worker で Dijkstra を実行。サーバー不要 | URL パラメータなし |
-
----
-
 ## ビューワーの使い方
-
-### API サーバーモード（推奨）
 
 ```
 https://shiwaku.github.io/ksj-route-search-api/?api=https://shiworks2.xsrv.jp/api
 ```
 
 FastAPI サーバーの URL を `?api=` パラメータで指定する。デプロイ手順は [SERVER_DEPLOY.md](SERVER_DEPLOY.md) を参照。
-
-### サーバーレスモード
-
-```
-https://shiwaku.github.io/ksj-route-search-api/
-```
-
-`net.bin`（23.5MB）をダウンロードしてブラウザ内で処理。`?api=` パラメータ省略時に動作。
 
 ### 操作方法
 
@@ -107,14 +88,11 @@ docs/
   index.html        ビューワー（GitHub Pages）
   pale.json         背景地図スタイル（国土地理院）
   roads.pmtiles     道路ネットワーク PMTiles（94MB・表示用）
-  net.bin           道路グラフバイナリ（23.5MB・サーバーレス Dijkstra 用）
-  worker.js         Web Worker（グラフ構築・Dijkstra）
 
 src/
   main.py           FastAPI アプリ
   graph.py          RouterGraph（scipy Dijkstra）
   make_pmtiles.py   道路リンク parquet → PMTiles 変換
-  make_network_bin.py  道路リンク parquet → net.bin 変換（サーバーレス用）
   benchmark.py      ライブラリ別速度比較
 
 network/saitama/    gitignored（要配置）
@@ -141,17 +119,6 @@ python3 src/ksj_to_network_csv.py \
 ---
 
 ## パフォーマンス（saitama_all・埼玉県）
-
-### サーバーレスモード（ブラウザ）
-
-| 処理 | 時間 |
-|---|---|
-| net.bin 初回ダウンロード | 約 2〜5 秒（キャッシュ後は不要） |
-| グラフ構築（Worker） | 約 3〜5 秒 |
-| 到達圏（vehicle 30 分） | 約 0.5 秒 |
-| 経路探索 | 約 0.2 秒 |
-
-### API サーバーモード（FastAPI）
 
 | 処理 | 時間 |
 |---|---|
