@@ -121,8 +121,13 @@
 
 <script>
 // ─────────────────────────────────────────────
-// 定数
+// URL パラメータ
+//   ?api=https://your-server.com  → FastAPI サーバーモード
+//   （省略）                       → Web Worker サーバーレスモード
 // ─────────────────────────────────────────────
+const API = (new URLSearchParams(location.search).get('api') || '').replace(/\/$/, '');
+const USE_API = !!API;
+
 const PMTILES_URL = 'roads.pmtiles';
 const NET_BIN_URL = 'net.bin';
 const RANK_COLORS = [
@@ -135,27 +140,94 @@ const RANK_LABELS = [
 ];
 
 // ─────────────────────────────────────────────
-// Worker 起動
+// バックエンド初期化
 // ─────────────────────────────────────────────
-const worker = new Worker('worker.js');
-let workerReady = false;
+let ready = false;
 
-worker.postMessage({ type: 'load', url: NET_BIN_URL });
+if (USE_API) {
+  // API サーバーモード
+  const bar = document.getElementById('loading-bar');
+  const msg = document.getElementById('loading-msg');
+  msg.textContent = `API: ${API} に接続中...`;
+  fetch(`${API}/healthz`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.graph_loaded) {
+        ready = true;
+        bar.style.display = 'none';
+        console.log(`[api] connected: ${API}`);
+      } else {
+        msg.textContent = 'グラフ未ロード。サーバーを再起動してください。';
+      }
+    })
+    .catch(() => { msg.textContent = `API サーバーに接続できません: ${API}`; });
+} else {
+  // Web Worker サーバーレスモード
+  const worker = new Worker('worker.js');
+  worker.postMessage({ type: 'load', url: NET_BIN_URL });
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'ready') {
+      ready = true;
+      document.getElementById('loading-bar').style.display = 'none';
+      console.log(`[worker] ready: ${data.nLinks.toLocaleString()} links, load: ${data.loadMs}ms`);
+      return;
+    }
+    if (data.type === 'reachability_result') { onReachabilityResult(data); return; }
+    if (data.type === 'route_result')        { onRouteResult(data); return; }
+    if (data.type === 'error') {
+      document.getElementById('loading-msg').textContent = `エラー: ${data.message}`;
+      document.querySelector('.spinner').style.display = 'none';
+    }
+  };
+  window._worker = worker;
+}
 
-worker.onmessage = ({ data }) => {
-  if (data.type === 'ready') {
-    workerReady = true;
-    document.getElementById('loading-bar').style.display = 'none';
-    console.log(`[worker] ready: ${data.nLinks.toLocaleString()} links, ${data.nNodes.toLocaleString()} nodes, load: ${data.loadMs}ms`);
-    return;
+// ─────────────────────────────────────────────
+// バックエンド共通インターフェース
+// ─────────────────────────────────────────────
+async function computeReachability(lat, lon, max_min, mode) {
+  if (USE_API) {
+    const t0 = performance.now();
+    const res = await fetch(`${API}/reachability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon, max_min, mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    data.meta.calc_ms = Math.round(performance.now() - t0);
+    return data;
+  } else {
+    return new Promise(resolve => {
+      window._worker.onmessage = ({ data }) => {
+        if (data.type === 'reachability_result') resolve(data);
+      };
+      window._worker.postMessage({ type: 'reachability', lat, lon, max_min, mode });
+    });
   }
-  if (data.type === 'reachability_result') { onReachabilityResult(data); return; }
-  if (data.type === 'route_result')        { onRouteResult(data); return; }
-  if (data.type === 'error') {
-    document.getElementById('loading-msg').textContent = `エラー: ${data.message}`;
-    document.querySelector('.spinner').style.display = 'none';
+}
+
+async function computeRoute(orig_lat, orig_lon, dest_lat, dest_lon, mode) {
+  if (USE_API) {
+    const t0 = performance.now();
+    const res = await fetch(`${API}/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    data.meta.calc_ms = Math.round(performance.now() - t0);
+    return data;
+  } else {
+    return new Promise(resolve => {
+      window._worker.onmessage = ({ data }) => {
+        if (data.type === 'route_result') resolve(data);
+      };
+      window._worker.postMessage({ type: 'route', orig_lat, orig_lon, dest_lat, dest_lon, mode });
+    });
   }
-};
+}
 
 // ─────────────────────────────────────────────
 // PMTiles プロトコル登録・マップ初期化
@@ -238,8 +310,8 @@ map.on('click', ({ lngLat: { lng, lat } }) => {
   if (origMarker) origMarker.remove();
   origMarker = new maplibregl.Marker({ element: makeMarkerEl('#00aa44') })
     .setLngLat([lng, lat]).addTo(map);
-  if (workerReady) document.getElementById('btn-reach').disabled = false;
-  if (workerReady && destLatLon) document.getElementById('btn-route').disabled = false;
+  if (ready) document.getElementById('btn-reach').disabled = false;
+  if (ready && destLatLon) document.getElementById('btn-route').disabled = false;
 });
 
 map.on('contextmenu', (e) => {
@@ -249,7 +321,7 @@ map.on('contextmenu', (e) => {
   if (destMarker) destMarker.remove();
   destMarker = new maplibregl.Marker({ element: makeMarkerEl('#dd2222') })
     .setLngLat([lng, lat]).addTo(map);
-  if (workerReady && origLatLon) document.getElementById('btn-route').disabled = false;
+  if (ready && origLatLon) document.getElementById('btn-route').disabled = false;
 });
 
 // ─────────────────────────────────────────────
@@ -278,8 +350,8 @@ function clearAllStates() {
 // ─────────────────────────────────────────────
 // 到達圏リクエスト
 // ─────────────────────────────────────────────
-document.getElementById('btn-reach').addEventListener('click', () => {
-  if (!origLatLon || !workerReady) return;
+document.getElementById('btn-reach').addEventListener('click', async () => {
+  if (!origLatLon || !ready) return;
   const [lat, lon] = origLatLon;
   const mode    = document.getElementById('reach-mode').value;
   const max_min = parseFloat(rangeEl.value);
@@ -289,7 +361,14 @@ document.getElementById('btn-reach').addEventListener('click', () => {
   status.textContent = '計算中...';
   document.getElementById('btn-reach').disabled = true;
 
-  worker.postMessage({ type: 'reachability', lat, lon, max_min, mode });
+  try {
+    const data = await computeReachability(lat, lon, max_min, mode);
+    onReachabilityResult(data);
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `エラー: ${e.message}`;
+    document.getElementById('btn-reach').disabled = false;
+  }
 });
 
 function onReachabilityResult(data) {
@@ -323,8 +402,8 @@ function onReachabilityResult(data) {
 // ─────────────────────────────────────────────
 let prevRouteIds = [];
 
-document.getElementById('btn-route').addEventListener('click', () => {
-  if (!origLatLon || !destLatLon || !workerReady) return;
+document.getElementById('btn-route').addEventListener('click', async () => {
+  if (!origLatLon || !destLatLon || !ready) return;
   const [orig_lat, orig_lon] = origLatLon;
   const [dest_lat, dest_lon] = destLatLon;
   const mode   = document.getElementById('route-mode').value;
@@ -334,7 +413,14 @@ document.getElementById('btn-route').addEventListener('click', () => {
   status.textContent = '計算中...';
   document.getElementById('btn-route').disabled = true;
 
-  worker.postMessage({ type: 'route', orig_lat, orig_lon, dest_lat, dest_lon, mode });
+  try {
+    const data = await computeRoute(orig_lat, orig_lon, dest_lat, dest_lon, mode);
+    onRouteResult(data);
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `エラー: ${e.message}`;
+    document.getElementById('btn-route').disabled = false;
+  }
 });
 
 function onRouteResult(data) {
