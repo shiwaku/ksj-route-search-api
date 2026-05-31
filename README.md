@@ -120,6 +120,40 @@ flowchart TD
 
 ---
 
+### グラフのライフサイクル
+
+```
+uvicorn 起動コマンド実行（SSH で手動 or cron）
+    └─ RouterGraph.__init__（〜25 秒）← ここだけコストが高い
+           └─ yield → ポート 18080 でリクエスト待機
+                  │
+                  │  プロセスが生き続ける間、グラフはメモリに常駐
+                  │
+                  ├─ POST /reachability → Dijkstra（0.07 s）
+                  ├─ POST /reachability → Dijkstra（0.07 s）
+                  └─ ...
+
+Xserver 再起動 / pkill uvicorn
+    └─ グラフ消滅 → 再度起動コマンドが必要
+```
+
+**ネットワークデータの差し替え手順**（現状・ホットリロード非対応）
+
+```bash
+# ① 新しい parquet を転送
+scp -P 10022 新しい道路リンク.parquet user@sv16193.xserver.jp:~/ksj-route-search-api/network/saitama/
+
+# ② uvicorn を停止
+pkill -f "uvicorn src.main:app"
+
+# ③ 再起動（グラフ再構築 〜25 秒）
+nohup uvicorn src.main:app --host 0.0.0.0 --port 18080 > ~/api.log 2>&1 &
+```
+
+再起動中はサービス停止になる。停止を避けるには `/admin/reload` エンドポイントの追加が必要（未実装）。
+
+---
+
 ### 到達圏（POST /reachability）
 
 ```mermaid
@@ -273,11 +307,15 @@ python3 src/ksj_to_network_csv.py \
 
 ## パフォーマンス（saitama_all・埼玉県）
 
-| 処理 | 時間 |
-|---|---|
-| 起動時グラフ構築 | 約 25 秒（1 回のみ） |
-| `/reachability` vehicle 30 分 | 約 0.6 s |
-| `/route` vehicle | 約 0.1 s |
+| 処理 | 時間 | 内訳 |
+|---|---|---|
+| 起動時 parquet 読み込み | 約 7.6 s | 1 回のみ |
+| 起動時グラフ構築 | 約 17 s | 1 回のみ（CSR行列・KDTree・edge_to_link） |
+| **起動時合計** | **約 25 s** | |
+| `/reachability` vehicle 30 分 | **約 0.6 s** | Dijkstra 0.07 s + JSON シリアライズ 0.5 s |
+| `/route` vehicle | **約 0.1 s** | |
+
+リクエストごとのボトルネックは **Dijkstra（0.07 s）ではなく JSON シリアライズ（0.5 s）**。到達リンク最大 27 万件の `{link_id: dist_min}` dict 組み立てが支配的。`orjson` 等の高速シリアライザへの置き換えで改善余地あり。
 
 ---
 
@@ -316,6 +354,30 @@ walk 速度は `ksj_to_network_csv.py` の `--walk-kmh` オプションで変更
 time_001min = max(1, round(dist_m / speed_kmh * 6.0))  # 0.01分単位
 走行時間 (分) = time_001min × 0.01
 ```
+
+### parquet カラムと速度の関係
+
+道路リンク parquet には `time_001min`（vehicle 用）と `dist_m` の両方が格納されている。API サーバー（`graph.py`）は起動時にそれぞれを読み込んで 2 モード分の CSR 行列を構築する。
+
+| カラム | 内容 | 使うモード |
+|---|---|---|
+| `dist_m` | リンク長（m） | walk モードのコスト計算元 |
+| `time_001min` | 道路種別別速度で計算した所要時間（0.01 分単位） | vehicle モード |
+
+walk モードの所要時間は parquet には焼き込まれておらず、`graph.py` が `dist_m ÷ 60` でリアルタイム計算する。
+
+### 速度を変更するには
+
+**現状**：速度は parquet 生成時に焼き込まれるため、変更には parquet の再生成が必要。
+
+```bash
+# ① ksj_to_network_csv.py の SPEED_KMH を編集
+# ② 再生成
+python3 ksj_to_network_csv.py --meshes 5338,5339,5438,5439 --case saitama_all --pref 埼玉県
+# ③ scp で転送 → uvicorn 再起動
+```
+
+**改善案**：`dist_m` と `N13_003` から `graph.py` 側で走行時間を計算する設計にすれば、速度テーブルの変更は `graph.py` の修正 + uvicorn 再起動のみで済む（parquet 再生成不要）。
 
 ---
 

@@ -96,6 +96,7 @@
         <option value="vehicle">車</option>
         <option value="walk">徒歩（3.6 km/h）</option>
       </select>
+      <p id="reach-speed-hint" class="hint" style="margin-top:4px"></p>
     </div>
     <div>
       <label>最大時間</label>
@@ -124,6 +125,7 @@
         <option value="vehicle">車</option>
         <option value="walk">徒歩（3.6 km/h）</option>
       </select>
+      <p id="route-speed-hint" class="hint" style="margin-top:4px"></p>
     </div>
     <p class="hint">
       <b>左クリック</b>: 始点を設定<br>
@@ -301,6 +303,22 @@ document.querySelectorAll('.tab').forEach(btn => {
 const rangeEl  = document.getElementById('reach-maxmin');
 const rangeVal = document.getElementById('reach-maxmin-val');
 rangeEl.addEventListener('input', () => { rangeVal.textContent = rangeEl.value; });
+
+const SPEED_HINTS = {
+  vehicle: '国道 35 / 都道府県道 30 / 市区町村道 20 / 高速 80 km/h',
+  walk:    '全リンク 3.6 km/h 一律',
+};
+function updateSpeedHint(selectEl, hintEl) {
+  hintEl.textContent = SPEED_HINTS[selectEl.value] || '';
+}
+const reachModeEl  = document.getElementById('reach-mode');
+const routeModeEl  = document.getElementById('route-mode');
+const reachHintEl  = document.getElementById('reach-speed-hint');
+const routeHintEl  = document.getElementById('route-speed-hint');
+reachModeEl.addEventListener('change', () => updateSpeedHint(reachModeEl, reachHintEl));
+routeModeEl.addEventListener('change', () => updateSpeedHint(routeModeEl, routeHintEl));
+updateSpeedHint(reachModeEl, reachHintEl);
+updateSpeedHint(routeModeEl, routeHintEl);
 
 // ─────────────────────────────────────────────
 // feature-state クリア
