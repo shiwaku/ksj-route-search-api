@@ -556,9 +556,9 @@ document.getElementById('btn-route').addEventListener('click', async () => {
       status.className = 'status err';
       status.textContent = data.meta.error;
     } else {
-      const { dist_min, link_count } = data.meta;
+      const { dist_min, dist_km, link_count } = data.meta;
       status.className = 'status ok';
-      status.textContent = `${dist_min}分 / ${link_count}本 | API:${fetchMs}ms | 描画:${stateMs}ms`;
+      status.textContent = `${dist_min}分 / ${dist_km}km / ${link_count}本 | API:${fetchMs}ms | 描画:${stateMs}ms`;
     }
   } catch (e) {
     status.className = 'status err';

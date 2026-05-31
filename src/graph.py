@@ -58,6 +58,9 @@ class RouterGraph:
         self._kdtree   = KDTree(coords)
         self._node_ids = node_ids
 
+        # リンク距離（経路の総距離計算用）
+        self._link_dist_m = links["dist_m"].astype(float).to_numpy()
+
         # リンク両端のノードインデックス（到達圏計算で毎回使う）
         self._link_i1 = np.array([self._n2i.get(int(n), -1) for n in n1], dtype=np.int32)
         self._link_i2 = np.array([self._n2i.get(int(n), -1) for n in n2], dtype=np.int32)
@@ -159,10 +162,13 @@ class RouterGraph:
             node = prev
         link_ids.reverse()
 
+        total_m = float(self._link_dist_m[link_ids].sum()) if link_ids else 0.0
+
         return {
             "link_ids": link_ids,
             "meta": {
                 "dist_min":    round(total_min, 2),
+                "dist_km":     round(total_m / 1000, 2),
                 "link_count":  len(link_ids),
                 "orig_snap_m": round(orig_snap),
                 "dest_snap_m": round(dest_snap),
