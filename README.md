@@ -393,7 +393,21 @@ sleep 30 && curl -s http://localhost:18080/healthz
 ### ログ確認
 
 ```bash
+# リアルタイム監視
 tail -f ~/api.log
+
+# 直近5行（起動確認・警告チェック）
+tail -5 ~/api.log
+```
+
+正常起動時の末尾ログ例：
+
+```
+[graph] 道路リンク読み込み: .../KSJ_N13-24_saitama_all_道路リンク.parquet
+[graph]   リンク: 949,637本  ノード: 706,418件
+[graph] エッジ逆引きテーブル構築中...
+[graph] 準備完了: ノード 707,538 / エッジ 1,888,296
+INFO:     127.0.0.1:xxxxx - "GET /healthz HTTP/1.1" 200 OK
 ```
 
 ---
