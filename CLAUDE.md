@@ -135,6 +135,37 @@ https://shiwaku.github.io/ksj-route-search-api/?api=https://your-api.example.com
 3. Paint expression の `match ['feature-state', 'dist_rank']` で色付け
 4. `removeFeatureState` でリセット（新しいリクエスト前）
 
+## 描画パフォーマンス改善（未実装・検討メモ）
+
+到達圏表示後にパン・ズームが重くなる原因は、27 万リンクに `setFeatureState` がセットされたまま毎フレーム paint expression が評価されるため。
+
+### 検討案：moveend で feature-state を再適用
+
+- API は 1 回だけ叩き、全データ（link_id → dist_rank）をクライアントの Map に保持
+- `map.on('moveend')` のたびに `removeFeatureState` → `queryRenderedFeatures` で現在の viewport 内のリンクのみ `setFeatureState`
+- 常に「今見えている分だけ」色付けされた状態を維持
+
+```javascript
+const reachData = {};  // link_id → dist_rank（APIレスポンスをキャッシュ）
+
+map.on('moveend', () => {
+  if (!Object.keys(reachData).length) return;
+  map.removeFeatureState({ source: 'roads', sourceLayer: 'roads' });
+  const visible = map.queryRenderedFeatures({ layers: ['roads-reach'] });
+  for (const f of visible) {
+    const rank = reachData[f.id];
+    if (rank !== undefined) {
+      map.setFeatureState({ source: 'roads', sourceLayer: 'roads', id: f.id }, { dist_rank: rank });
+    }
+  }
+});
+```
+
+**効果**：全域表示でも画面内に映るリンクのみ色付け → パン・ズーム時の paint expression 評価コストを大幅削減  
+**注意**：`queryRenderedFeatures` 自体にもコストがあるため、debounce（100〜200ms）が必要
+
+---
+
 ## パフォーマンス（saitama_all・949,637 本）
 
 | 処理 | 時間 |
