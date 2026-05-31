@@ -13,9 +13,10 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import orjson
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -99,7 +100,7 @@ def healthz():
     return {"status": "ok", "graph_loaded": _graph is not None}
 
 
-@app.post("/reachability", tags=["routing"], response_class=ORJSONResponse)
+@app.post("/reachability", tags=["routing"])
 def reachability(req: ReachabilityRequest):
     """
     始点から max_min 分以内に到達できる道路リンクを返す。
@@ -111,10 +112,13 @@ def reachability(req: ReachabilityRequest):
     """
     if _graph is None:
         raise HTTPException(503, "グラフ未ロード")
-    return ORJSONResponse(_graph.reachability(req.lat, req.lon, req.max_min, req.mode))
+    return Response(
+        content=orjson.dumps(_graph.reachability(req.lat, req.lon, req.max_min, req.mode)),
+        media_type="application/json",
+    )
 
 
-@app.post("/route", tags=["routing"], response_class=ORJSONResponse)
+@app.post("/route", tags=["routing"])
 def route(req: RouteRequest):
     """
     始点から終点までの最短経路を link_id リストで返す。
@@ -126,5 +130,8 @@ def route(req: RouteRequest):
     """
     if _graph is None:
         raise HTTPException(503, "グラフ未ロード")
-    return ORJSONResponse(_graph.route(req.orig_lat, req.orig_lon,
-                                       req.dest_lat, req.dest_lon, req.mode))
+    return Response(
+        content=orjson.dumps(_graph.route(req.orig_lat, req.orig_lon,
+                                          req.dest_lat, req.dest_lon, req.mode)),
+        media_type="application/json",
+    )
