@@ -192,6 +192,20 @@
 
 <script>
 // ─────────────────────────────────────────────
+// URL ハッシュ（#map=zoom/lat/lon）
+// ─────────────────────────────────────────────
+function parseHash() {
+  const m = location.hash.match(/^#map=([\d.]+)\/([-\d.]+)\/([-\d.]+)$/);
+  if (!m) return {};
+  return { zoom: parseFloat(m[1]), center: [parseFloat(m[3]), parseFloat(m[2])] };
+}
+function updateHash() {
+  const { lat, lng } = map.getCenter();
+  const z = map.getZoom().toFixed(2);
+  history.replaceState(null, '', `#map=${z}/${lat.toFixed(5)}/${lng.toFixed(5)}`);
+}
+
+// ─────────────────────────────────────────────
 // パネル開閉
 // ─────────────────────────────────────────────
 const panel       = document.getElementById('panel');
@@ -272,8 +286,11 @@ const map = new maplibregl.Map({
   style: 'pale.json',
   center: [139.55, 35.95],
   zoom: 10,
+  ...parseHash(),
 });
 map.addControl(new maplibregl.NavigationControl(), 'top-left');
+map.on('moveend', updateHash);
+map.on('zoomend', updateHash);
 map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
 
 map.on('load', () => {
