@@ -263,6 +263,7 @@ const map = new maplibregl.Map({
   zoom: 10,
 });
 map.addControl(new maplibregl.NavigationControl(), 'top-left');
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
 
 map.on('load', () => {
   map.addSource('roads', {
