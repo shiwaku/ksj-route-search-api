@@ -135,11 +135,13 @@ https://shiwaku.github.io/ksj-route-search-api/?api=https://your-api.example.com
 3. Paint expression の `match ['feature-state', 'dist_rank']` で色付け
 4. `removeFeatureState` でリセット（新しいリクエスト前）
 
-## 描画パフォーマンス改善（未実装・検討メモ）
+## 描画パフォーマンス（メモ）
 
-到達圏表示後にパン・ズームが重くなる原因は、27 万リンクに `setFeatureState` がセットされたまま毎フレーム paint expression が評価されるため。
+MapLibre は画面内のタイルしか描画しないため、27 万件の feature-state があっても毎フレームの評価コストは「表示中タイル内のフィーチャ数」のみ。画面外の feature-state は評価されない。したがって **set したまま放置で問題なく、moveend での再適用は逆効果**（パンのたびに removeFeatureState + queryRenderedFeatures + 再ループが走るため）。
 
-### 検討案：moveend で feature-state を再適用
+実際の重さは `setFeatureState` の初回ループ（27 万回）による一時的な UI フリーズが主因。根本改善するなら requestAnimationFrame チャンク分割か、ビューポートクリップ（API 側で bbox フィルタ）が有効。
+
+### ~~検討案：moveend で feature-state を再適用~~（実装・削除済み・逆効果）
 
 - API は 1 回だけ叩き、全データ（link_id → dist_rank）をクライアントの Map に保持
 - `map.on('moveend')` のたびに `removeFeatureState` → `queryRenderedFeatures` で現在の viewport 内のリンクのみ `setFeatureState`

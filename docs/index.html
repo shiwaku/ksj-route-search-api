@@ -459,33 +459,6 @@ function clearAllStates() {
   return new Promise(r => requestAnimationFrame(r));
 }
 
-// ─────────────────────────────────────────────
-// 到達圏 viewport 再適用
-// ─────────────────────────────────────────────
-let reachCache = {};  // link_id(int) → dist_rank(int)
-let moveendTimer = null;
-
-function applyVisibleReach() {
-  if (!Object.keys(reachCache).length) return;
-  map.removeFeatureState({ source: 'roads', sourceLayer: 'roads' });
-  const seen = new Set();
-  for (const f of map.queryRenderedFeatures({ layers: ['roads-base'] })) {
-    if (seen.has(f.id)) continue;
-    seen.add(f.id);
-    const rank = reachCache[f.id];
-    if (rank !== undefined) {
-      map.setFeatureState(
-        { source: 'roads', sourceLayer: 'roads', id: f.id },
-        { dist_rank: rank }
-      );
-    }
-  }
-}
-
-map.on('moveend', () => {
-  clearTimeout(moveendTimer);
-  moveendTimer = setTimeout(applyVisibleReach, 150);
-});
 
 // ─────────────────────────────────────────────
 // 到達圏
@@ -512,15 +485,14 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
     const data = await res.json();
     const fetchMs = Date.now() - t0;
 
-    // API 結果をキャッシュ（link_id → dist_rank）
-    reachCache = {};
-    for (const [id, distMin] of Object.entries(data.links)) {
-      reachCache[parseInt(id)] = Math.min(Math.floor(distMin / 10), 9);
-    }
-
     await clearAllStates();
     const t1 = Date.now();
-    applyVisibleReach();
+    for (const [id, distMin] of Object.entries(data.links)) {
+      map.setFeatureState(
+        { source: 'roads', sourceLayer: 'roads', id: parseInt(id) },
+        { dist_rank: Math.min(Math.floor(distMin / 10), 9) }
+      );
+    }
     const stateMs = Date.now() - t1;
 
     const { snap_m, reachable_links } = data.meta;
@@ -600,7 +572,6 @@ document.getElementById('btn-route').addEventListener('click', async () => {
 // クリアボタン
 // ─────────────────────────────────────────────
 document.getElementById('btn-clear-reach').addEventListener('click', async () => {
-  reachCache = {};
   await clearAllStates();
   clearMarkers();
   document.getElementById('status-reach').className = 'status';
