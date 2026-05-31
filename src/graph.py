@@ -88,7 +88,14 @@ class RouterGraph:
     # ─────────────────────────────────────────────
     # 到達圏（1対N）
     # ─────────────────────────────────────────────
-    def reachability(self, lat: float, lon: float, max_min: float, mode: str) -> dict:
+    def _get_graph(self, mode: str, walk_kmh: float = 3.6):
+        G = self._G[mode]
+        if mode == 'walk' and walk_kmh != 3.6:
+            G = G * (3.6 / walk_kmh)
+        return G
+
+    def reachability(self, lat: float, lon: float, max_min: float, mode: str,
+                     walk_kmh: float = 3.6) -> dict:
         """
         始点から max_min 分以内に到達できる道路リンクの link_id と到達時間を返す。
 
@@ -99,7 +106,7 @@ class RouterGraph:
             }
         """
         orig_idx, snap_m = self._snap(lat, lon)
-        G = self._G[mode]
+        G = self._get_graph(mode, walk_kmh)
 
         dist_node = sp_dijkstra(G, directed=True, indices=orig_idx,
                                 limit=max_min, return_predecessors=False)
@@ -127,7 +134,8 @@ class RouterGraph:
     # 経路探索（1対1）
     # ─────────────────────────────────────────────
     def route(self, orig_lat: float, orig_lon: float,
-              dest_lat: float, dest_lon: float, mode: str) -> dict:
+              dest_lat: float, dest_lon: float, mode: str,
+              walk_kmh: float = 3.6) -> dict:
         """
         最短経路の link_id リスト（始点→終点順）を返す。
 
@@ -139,7 +147,7 @@ class RouterGraph:
         """
         orig_idx, orig_snap = self._snap(orig_lat, orig_lon)
         dest_idx, dest_snap = self._snap(dest_lat, dest_lon)
-        G = self._G[mode]
+        G = self._get_graph(mode, walk_kmh)
 
         dist, pred = sp_dijkstra(G, directed=True, indices=orig_idx,
                                  return_predecessors=True)

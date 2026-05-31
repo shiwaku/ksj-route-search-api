@@ -152,6 +152,13 @@
       </select>
       <p id="reach-speed-hint" class="hint" style="margin-top:4px"></p>
     </div>
+    <div id="reach-walk-speed-row" style="display:none">
+      <label>徒歩速度</label>
+      <div class="range-row">
+        <input type="range" id="reach-walk-kmh" min="2" max="8" value="3.6" step="0.2">
+        <span class="range-val"><span id="reach-walk-kmh-val">3.6</span> km/h</span>
+      </div>
+    </div>
     <div>
       <label>最大時間</label>
       <div class="range-row">
@@ -180,6 +187,13 @@
         <option value="vehicle">車</option>
       </select>
       <p id="route-speed-hint" class="hint" style="margin-top:4px"></p>
+    </div>
+    <div id="route-walk-speed-row" style="display:none">
+      <label>徒歩速度</label>
+      <div class="range-row">
+        <input type="range" id="route-walk-kmh" min="2" max="8" value="3.6" step="0.2">
+        <span class="range-val"><span id="route-walk-kmh-val">3.6</span> km/h</span>
+      </div>
     </div>
     <div>
       <label>地図をタップして設定</label>
@@ -446,10 +460,26 @@ const reachModeEl  = document.getElementById('reach-mode');
 const routeModeEl  = document.getElementById('route-mode');
 const reachHintEl  = document.getElementById('reach-speed-hint');
 const routeHintEl  = document.getElementById('route-speed-hint');
-reachModeEl.addEventListener('change', () => updateSpeedHint(reachModeEl, reachHintEl));
-routeModeEl.addEventListener('change', () => updateSpeedHint(routeModeEl, routeHintEl));
+function updateWalkSpeedRow(modeEl, rowId, valId, inputId) {
+  const isWalk = modeEl.value === 'walk';
+  document.getElementById(rowId).style.display = isWalk ? '' : 'none';
+  const el = document.getElementById(inputId);
+  el.addEventListener('input', () => {
+    document.getElementById(valId).textContent = parseFloat(el.value).toFixed(1);
+  });
+}
+reachModeEl.addEventListener('change', () => {
+  updateSpeedHint(reachModeEl, reachHintEl);
+  updateWalkSpeedRow(reachModeEl, 'reach-walk-speed-row', 'reach-walk-kmh-val', 'reach-walk-kmh');
+});
+routeModeEl.addEventListener('change', () => {
+  updateSpeedHint(routeModeEl, routeHintEl);
+  updateWalkSpeedRow(routeModeEl, 'route-walk-speed-row', 'route-walk-kmh-val', 'route-walk-kmh');
+});
 updateSpeedHint(reachModeEl, reachHintEl);
 updateSpeedHint(routeModeEl, routeHintEl);
+updateWalkSpeedRow(reachModeEl, 'reach-walk-speed-row', 'reach-walk-kmh-val', 'reach-walk-kmh');
+updateWalkSpeedRow(routeModeEl, 'route-walk-speed-row', 'route-walk-kmh-val', 'route-walk-kmh');
 
 // ─────────────────────────────────────────────
 // feature-state クリア
@@ -479,7 +509,8 @@ document.getElementById('btn-reach').addEventListener('click', async () => {
     const res = await fetch(`${API}/reachability`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lon, max_min, mode }),
+      body: JSON.stringify({ lat, lon, max_min, mode,
+        walk_kmh: parseFloat(document.getElementById('reach-walk-kmh').value) }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -529,7 +560,8 @@ document.getElementById('btn-route').addEventListener('click', async () => {
     const res = await fetch(`${API}/route`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode }),
+      body: JSON.stringify({ orig_lat, orig_lon, dest_lat, dest_lon, mode,
+        walk_kmh: parseFloat(document.getElementById('route-walk-kmh').value) }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();

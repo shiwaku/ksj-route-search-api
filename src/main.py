@@ -78,10 +78,11 @@ def viewer_pmtiles():
 # リクエストモデル
 # ─────────────────────────────────────────────
 class ReachabilityRequest(BaseModel):
-    lat:     float = Field(..., description="始点緯度")
-    lon:     float = Field(..., description="始点経度")
-    max_min: float = Field(60.0, ge=1, le=240, description="到達圏の上限時間（分）")
-    mode:    str   = Field("vehicle", pattern="^(vehicle|walk)$")
+    lat:      float = Field(..., description="始点緯度")
+    lon:      float = Field(..., description="始点経度")
+    max_min:  float = Field(60.0, ge=1, le=240, description="到達圏の上限時間（分）")
+    mode:     str   = Field("vehicle", pattern="^(vehicle|walk)$")
+    walk_kmh: float = Field(3.6, ge=1.0, le=10.0, description="徒歩速度 km/h（walk モード時のみ有効）")
 
 
 class RouteRequest(BaseModel):
@@ -90,6 +91,7 @@ class RouteRequest(BaseModel):
     dest_lat: float = Field(..., description="終点緯度")
     dest_lon: float = Field(..., description="終点経度")
     mode:     str   = Field("vehicle", pattern="^(vehicle|walk)$")
+    walk_kmh: float = Field(3.6, ge=1.0, le=10.0, description="徒歩速度 km/h（walk モード時のみ有効）")
 
 
 # ─────────────────────────────────────────────
@@ -113,7 +115,7 @@ def reachability(req: ReachabilityRequest):
     if _graph is None:
         raise HTTPException(503, "グラフ未ロード")
     return Response(
-        content=orjson.dumps(_graph.reachability(req.lat, req.lon, req.max_min, req.mode)),
+        content=orjson.dumps(_graph.reachability(req.lat, req.lon, req.max_min, req.mode, req.walk_kmh)),
         media_type="application/json",
     )
 
@@ -132,6 +134,6 @@ def route(req: RouteRequest):
         raise HTTPException(503, "グラフ未ロード")
     return Response(
         content=orjson.dumps(_graph.route(req.orig_lat, req.orig_lon,
-                                          req.dest_lat, req.dest_lon, req.mode)),
+                                          req.dest_lat, req.dest_lon, req.mode, req.walk_kmh)),
         media_type="application/json",
     )
