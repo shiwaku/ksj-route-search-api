@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+orjson
 geopandas
 pyarrow
 scipy
