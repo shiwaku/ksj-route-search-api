@@ -451,7 +451,6 @@ rangeEl.addEventListener('input', () => { rangeVal.textContent = rangeEl.value; 
 
 const SPEED_HINTS = {
   vehicle: '国道 35 km/h / 都道府県道 30 km/h / 市区町村道 20 km/h / 高速 80 km/h',
-  walk:    '全リンク 3.6 km/h 一律',
 };
 function updateSpeedHint(selectEl, hintEl) {
   hintEl.textContent = SPEED_HINTS[selectEl.value] || '';
