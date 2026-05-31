@@ -75,6 +75,17 @@
     .legend-swatch { width: 24px; height: 4px; border-radius: 2px; flex-shrink: 0; }
 
 
+    /* ── タップモード切替 ── */
+    .tap-toggle { display: flex; gap: 4px; }
+    .tap-toggle button {
+      flex: 1; padding: 7px 4px; font-size: 12px; font-weight: normal;
+      background: #f0f0f0; color: #555; border: 1px solid #ddd; border-radius: 4px;
+    }
+    .tap-toggle button.active {
+      background: #0060df; color: #fff; border-color: #0060df; font-weight: bold;
+    }
+    .tap-toggle button:hover:not(.active) { background: #e4e4e4; }
+
     /* ── パネル開閉 ── */
     #panel h1 { display: flex; align-items: center; justify-content: space-between; }
     #btn-panel-close {
@@ -137,7 +148,7 @@
       <label>移動モード</label>
       <select id="reach-mode">
         <option value="vehicle">車</option>
-        <option value="walk">徒歩（3.6 km/h）</option>
+        <option value="walk">徒歩</option>
       </select>
       <p id="reach-speed-hint" class="hint" style="margin-top:4px"></p>
     </div>
@@ -166,14 +177,18 @@
       <label>移動モード</label>
       <select id="route-mode">
         <option value="vehicle">車</option>
-        <option value="walk">徒歩（3.6 km/h）</option>
+        <option value="walk">徒歩</option>
       </select>
       <p id="route-speed-hint" class="hint" style="margin-top:4px"></p>
     </div>
-    <p class="hint">
-      <b>左クリック</b>: 始点を設定<br>
-      <b>右クリック</b>: 終点を設定
-    </p>
+    <div>
+      <label>地図をタップして設定</label>
+      <div class="tap-toggle">
+        <button id="tap-orig" class="active">▶ 始点</button>
+        <button id="tap-dest">▶ 終点</button>
+      </div>
+    </div>
+    <p class="hint">始点を設定すると自動で終点モードに切り替わります<br>デスクトップ: 右クリックでも終点を設定できます</p>
     <div class="btn-row">
       <button id="btn-route" disabled>経路を表示</button>
       <button id="btn-clear-route" class="btn-clear">クリア</button>
@@ -363,23 +378,45 @@ function clearMarkers() {
   document.getElementById('btn-route').disabled = true;
 }
 
-map.on('click', ({ lngLat: { lng, lat } }) => {
+// タップモード（'orig' or 'dest'）
+let tapMode = 'orig';
+function setTapMode(mode) {
+  tapMode = mode;
+  document.getElementById('tap-orig').classList.toggle('active', mode === 'orig');
+  document.getElementById('tap-dest').classList.toggle('active', mode === 'dest');
+}
+document.getElementById('tap-orig').addEventListener('click', () => setTapMode('orig'));
+document.getElementById('tap-dest').addEventListener('click', () => setTapMode('dest'));
+
+function setOrig(lng, lat) {
   origLatLon = [lat, lng];
   if (origMarker) origMarker.remove();
   origMarker = new maplibregl.Marker({ element: makeMarkerEl('#00aa44') })
     .setLngLat([lng, lat]).addTo(map);
   if (ready) document.getElementById('btn-reach').disabled = false;
   if (ready && destLatLon) document.getElementById('btn-route').disabled = false;
-});
-
-map.on('contextmenu', (e) => {
-  e.preventDefault();
-  const { lng, lat } = e.lngLat;
+}
+function setDest(lng, lat) {
   destLatLon = [lat, lng];
   if (destMarker) destMarker.remove();
   destMarker = new maplibregl.Marker({ element: makeMarkerEl('#dd2222') })
     .setLngLat([lng, lat]).addTo(map);
   if (ready && origLatLon) document.getElementById('btn-route').disabled = false;
+}
+
+map.on('click', ({ lngLat: { lng, lat } }) => {
+  const routeActive = document.getElementById('pane-route').classList.contains('active');
+  if (routeActive && tapMode === 'dest') {
+    setDest(lng, lat);
+  } else {
+    setOrig(lng, lat);
+    if (routeActive) setTapMode('dest'); // 始点設定後、自動で終点モードへ
+  }
+});
+
+map.on('contextmenu', (e) => {
+  e.preventDefault();
+  setDest(e.lngLat.lng, e.lngLat.lat);
 });
 
 // ─────────────────────────────────────────────
@@ -572,6 +609,7 @@ document.getElementById('btn-clear-reach').addEventListener('click', async () =>
 });
 
 document.getElementById('btn-clear-route').addEventListener('click', () => {
+  setTapMode('orig');
   for (const id of prevRouteIds) {
     map.setFeatureState(
       { source: 'roads', sourceLayer: 'roads', id },
