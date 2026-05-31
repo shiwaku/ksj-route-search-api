@@ -358,6 +358,46 @@ dist_link = min(10, 13) = 10分
 
 ---
 
+## サーバー更新手順
+
+コードを変更して push した後、Xserver 側で以下を実行する。
+
+### 通常の更新（コード変更のみ）
+
+```bash
+ssh -p 10022 shiworks2@sv16193.xserver.jp
+cd ~/ksj-route-search-api
+git pull
+pkill -f "uvicorn src.main:app"
+nohup uvicorn src.main:app --host 0.0.0.0 --port 18080 > ~/api.log 2>&1 &
+```
+
+### パッケージ追加時（requirements.txt を変更した場合）
+
+```bash
+git pull
+pip install -r requirements.txt
+pkill -f "uvicorn src.main:app"
+nohup uvicorn src.main:app --host 0.0.0.0 --port 18080 > ~/api.log 2>&1 &
+```
+
+### 起動確認
+
+グラフ構築に約 25 秒かかるため、起動後に待ってから確認する。
+
+```bash
+sleep 30 && curl -s http://localhost:18080/healthz
+# → {"status":"ok","graph_loaded":true}
+```
+
+### ログ確認
+
+```bash
+tail -f ~/api.log
+```
+
+---
+
 ## 道路リンク速度設定
 
 速度は `ksj_to_network_csv.py` でネットワークデータ生成時に `time_001min` 列として書き込まれる。
