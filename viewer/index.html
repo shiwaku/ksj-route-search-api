@@ -74,13 +74,51 @@
       background: rgba(255,255,255,0.8); padding: 2px 6px;
       font-size: 10px; color: #333; pointer-events: none;
     }
+
+    /* ── パネル開閉 ── */
+    #panel h1 { display: flex; align-items: center; justify-content: space-between; }
+    #btn-panel-close {
+      background: none; border: none; color: #aaa; font-size: 18px;
+      cursor: pointer; padding: 0; font-weight: normal; line-height: 1; flex-shrink: 0;
+    }
+    #btn-panel-close:hover { color: #333; background: none; }
+
+    #btn-panel-open {
+      display: none;
+      position: fixed; top: 10px; right: 10px; z-index: 100;
+      width: 36px; height: 36px; padding: 0; font-size: 20px; font-weight: normal;
+      background: #fff; color: #444; border: 1px solid #ccc;
+      border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer;
+      align-items: center; justify-content: center;
+    }
+
+    #panel-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.4); z-index: 199;
+    }
+
+    /* デスクトップ: 幅アニメーションで折り畳み */
+    @media (min-width: 601px) {
+      #panel { transition: width 0.2s ease; }
+      #panel.closed { width: 0 !important; min-width: 0; overflow: hidden !important; }
+    }
+
+    /* モバイル: オーバーレイでスライドイン */
+    @media (max-width: 600px) {
+      #panel {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        width: min(280px, 90vw); z-index: 200;
+        transition: transform 0.25s ease;
+      }
+      #panel.closed { transform: translateX(100%); }
+    }
   </style>
 </head>
 <body>
 <div id="map"></div>
 <div id="survey-attr">国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85</div>
 <div id="panel">
-  <h1>経路探索・到達圏ビューワー</h1>
+  <h1>経路探索・到達圏ビューワー <button id="btn-panel-close" title="閉じる">✕</button></h1>
   <div id="api-banner"></div>
 
   <div class="tabs">
@@ -138,8 +176,36 @@
     <div id="status-route" class="status"></div>
   </div>
 </div>
+<button id="btn-panel-open" title="パネルを開く">☰</button>
+<div id="panel-overlay"></div>
 
 <script>
+// ─────────────────────────────────────────────
+// パネル開閉
+// ─────────────────────────────────────────────
+const panel       = document.getElementById('panel');
+const btnClose    = document.getElementById('btn-panel-close');
+const btnOpen     = document.getElementById('btn-panel-open');
+const overlay     = document.getElementById('panel-overlay');
+
+function openPanel() {
+  panel.classList.remove('closed');
+  btnOpen.style.display = 'none';
+  overlay.style.display = window.innerWidth <= 600 ? 'block' : 'none';
+}
+function closePanel() {
+  panel.classList.add('closed');
+  btnOpen.style.display = 'flex';
+  overlay.style.display = 'none';
+}
+
+btnClose.addEventListener('click', closePanel);
+btnOpen.addEventListener('click', openPanel);
+overlay.addEventListener('click', closePanel);
+
+// モバイルは初期状態を閉じた状態にする
+if (window.innerWidth <= 600) closePanel();
+
 // ─────────────────────────────────────────────
 // URL パラメータ
 //   ?api=https://your-server.com  → FastAPI サーバー URL
