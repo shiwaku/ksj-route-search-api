@@ -78,19 +78,24 @@
     /* ── パネル開閉 ── */
     #panel h1 { display: flex; align-items: center; justify-content: space-between; }
     #btn-panel-close {
-      background: none; border: none; color: #aaa; font-size: 18px;
-      cursor: pointer; padding: 0; font-weight: normal; line-height: 1; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; flex-shrink: 0;
+      background: #f0f0f0; border: none; border-radius: 6px;
+      color: #666; cursor: pointer;
+      transition: background .15s, color .15s;
     }
-    #btn-panel-close:hover { color: #333; background: none; }
+    #btn-panel-close:hover { background: #e0e0e0; color: #222; }
 
     #btn-panel-open {
       display: none;
       position: fixed; top: 10px; right: 10px; z-index: 100;
-      width: 36px; height: 36px; padding: 0; font-size: 20px; font-weight: normal;
-      background: #fff; color: #444; border: 1px solid #ccc;
-      border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer;
+      width: 36px; height: 36px; padding: 0;
+      background: #fff; color: #555; border: 1px solid #ddd;
+      border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); cursor: pointer;
       align-items: center; justify-content: center;
+      transition: background .15s;
     }
+    #btn-panel-open:hover { background: #f5f5f5; color: #222; }
 
     #panel-overlay {
       display: none; position: fixed; inset: 0;
@@ -118,7 +123,7 @@
 <div id="map"></div>
 <div id="survey-attr">国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85</div>
 <div id="panel">
-  <h1>経路探索・到達圏ビューワー <button id="btn-panel-close" title="閉じる">✕</button></h1>
+  <h1>経路探索・到達圏ビューワー <button id="btn-panel-close" title="パネルを閉じる"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 1 11 7 5 13"/></svg></button></h1>
   <div id="api-banner"></div>
 
   <div class="tabs">
@@ -176,7 +181,7 @@
     <div id="status-route" class="status"></div>
   </div>
 </div>
-<button id="btn-panel-open" title="パネルを開く">☰</button>
+<button id="btn-panel-open" title="パネルを開く"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 1 3 7 9 13"/></svg></button>
 <div id="panel-overlay"></div>
 
 <script>
@@ -372,7 +377,7 @@ const rangeVal = document.getElementById('reach-maxmin-val');
 rangeEl.addEventListener('input', () => { rangeVal.textContent = rangeEl.value; });
 
 const SPEED_HINTS = {
-  vehicle: '国道 35 / 都道府県道 30 / 市区町村道 20 / 高速 80 km/h',
+  vehicle: '国道 35 km/h / 都道府県道 30 km/h / 市区町村道 20 km/h / 高速 80 km/h',
   walk:    '全リンク 3.6 km/h 一律',
 };
 function updateSpeedHint(selectEl, hintEl) {
