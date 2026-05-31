@@ -74,11 +74,6 @@
     .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
     .legend-swatch { width: 24px; height: 4px; border-radius: 2px; flex-shrink: 0; }
 
-    #survey-attr {
-      position: absolute; bottom: 0; left: 0; z-index: 10;
-      background: rgba(255,255,255,0.8); padding: 2px 6px;
-      font-size: 10px; color: #333; pointer-events: none;
-    }
 
     /* ── パネル開閉 ── */
     #panel h1 { display: flex; align-items: center; justify-content: space-between; }
@@ -126,7 +121,6 @@
 </head>
 <body>
 <div id="map"></div>
-<div id="survey-attr">国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85</div>
 <div id="panel">
   <h1>経路探索・到達圏ビューワー <button id="btn-panel-close" title="パネルを閉じる"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 1 11 7 5 13"/></svg></button></h1>
   <div id="api-banner"></div>
@@ -289,9 +283,13 @@ const map = new maplibregl.Map({
   ...parseHash(),
 });
 map.addControl(new maplibregl.NavigationControl(), 'top-left');
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+map.addControl(new maplibregl.AttributionControl({
+  customAttribution: '国土数値情報 道路データ / 測量法に基づく国土地理院長承認（使用）R 8JHs 85',
+  compact: true,
+}), 'bottom-right');
 map.on('moveend', updateHash);
 map.on('zoomend', updateHash);
-map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
 
 map.on('load', () => {
   map.addSource('roads', {
