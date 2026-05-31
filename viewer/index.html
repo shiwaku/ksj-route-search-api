@@ -277,6 +277,7 @@ maplibregl.addProtocol('pmtiles', protocol.tile.bind(protocol));
 
 const map = new maplibregl.Map({
   container: 'map',
+  attributionControl: false,
   style: 'pale.json',
   center: [139.55, 35.95],
   zoom: 10,

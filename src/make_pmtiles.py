@@ -5,7 +5,7 @@
 出力: network/{case}/roads.pmtiles
   - レイヤー名  : roads
   - フィーチャID: link_id（行インデックス・API の link_id と一致）
-  - ズーム      : Z6〜Z14
+  - ズーム      : Z6〜Z13
 
 前提: tippecanoe がインストール済みであること
   sudo apt install tippecanoe   # Ubuntu 24.04+
@@ -56,7 +56,7 @@ def main():
     print("tippecanoe 実行中...")
     cmd = [
         "tippecanoe",
-        "-Z6", "-z14",
+        "-Z6", "-z13",
         "-l", "roads",
         "-y", "link_id",          # link_id プロパティのみ保持
         "-r1",                    # フィーチャの間引きを無効化
