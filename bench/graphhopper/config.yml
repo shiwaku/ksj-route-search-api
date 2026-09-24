@@ -1,0 +1,38 @@
+# KSJ 比較用 GraphHopper 設定（ADR-1 追記）。速度は way の maxspeed をそのまま使うカスタムモデル・無向
+graphhopper:
+  datareader.file: /data/roads.osm.pbf
+  graph.location: /data/graph-cache
+  import.osm.ignored_highways: "footway,steps"
+  graph.encoded_values: car_access, car_average_speed, road_class, max_speed
+  profiles:
+    - name: car
+      custom_model:
+        speed:
+          - if: "true"
+            limit_to: "max_speed"
+        priority:
+          - if: "!car_access"
+            multiply_by: "0"
+  profiles_ch:
+    - profile: car
+  profiles_lm: []
+  graph.dataaccess.default_type: RAM_STORE
+  prepare.min_network_size: 200
+  routing.max_visited_nodes: 10000000
+  routing.non_ch.max_waypoint_distance: 3000000
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+  request_log:
+    appenders: []
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: 0.0.0.0
+logging:
+  appenders:
+    - type: console
+      time_zone: UTC
+      log_format: "%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"

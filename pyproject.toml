@@ -1,0 +1,21 @@
+[project]
+name = "ksj-route-search"
+version = "0.1.0"
+description = "国土数値情報 道路データによる全国到達圏分析・経路探索（SvelteKit / FastAPI / PostgreSQL）"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "geopandas>=1.1.4",
+    "networkx>=3.6.1",
+    "numpy>=2.5.3",
+    "pandas>=3.0.5",
+    "psycopg[binary]>=3.3.5",
+    "pyarrow>=25.0.1",
+    "scipy>=1.18.1",
+    "shapely>=2.1.2",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[tool.uv]
+package = false

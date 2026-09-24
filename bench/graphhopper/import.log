@@ -1,0 +1,56 @@
+## using java 21.0.1 (64bit) from /opt/java/openjdk
+## Executing import. JAVA_OPTS=-Xmx3g -Xms1g
+01:49:00.767 [main] INFO  com.graphhopper.GraphHopper - version 12.0|2026-06-18T05:27:57Z (9,24,9,5,2,11)
+01:49:01.065 [main] INFO  com.graphhopper.GraphHopper - No custom areas are used, custom_areas.directory not given
+01:49:01.074 [main] INFO  com.graphhopper.GraphHopper - start creating graph from /data/roads.osm.pbf
+01:49:01.099 [main] INFO  com.graphhopper.GraphHopper - using car|RAM_STORE|2D|no_turn_cost|nodes:9,edges:24,geometry:9,location_index:5,string_index:2,nodesCH:0,shortcuts:11, memory:totalMB:1024, usedMB:46
+01:49:01.113 [main] INFO  c.g.reader.osm.WaySegmentParser - Start reading OSM file: '/data/roads.osm.pbf'
+01:49:01.113 [main] INFO  c.g.reader.osm.WaySegmentParser - pass1 - start
+01:49:02.685 [main] INFO  c.g.reader.osm.WaySegmentParser - pass1 - start reading OSM ways
+01:49:06.353 [main] INFO  c.g.reader.osm.WaySegmentParser - pass1 - finished, processed ways: 3,881,601, accepted ways: 3,881,601, way nodes: 14,030,745, relations: 0, totalMB:1206, usedMB:580
+01:49:06.353 [main] INFO  c.g.reader.osm.WaySegmentParser - pass1 - finished, took: 5.24s
+01:49:06.355 [main] INFO  c.g.reader.osm.WaySegmentParser - Creating graph. Node count (pillar+tower): 14030745, totalMB:1206, usedMB:581
+01:49:06.356 [main] INFO  c.g.reader.osm.WaySegmentParser - pass2 - start
+01:49:06.383 [main] INFO  c.g.reader.osm.WaySegmentParser - pass2 - start reading OSM nodes
+01:49:09.009 [main] INFO  c.g.reader.osm.WaySegmentParser - pass2 - processed nodes: 10,000,000, accepted nodes: 9,999,926, totalMB:1206, usedMB:977
+01:49:10.041 [main] INFO  c.g.reader.osm.WaySegmentParser - pass2 - start reading OSM ways
+01:49:25.267 [main] INFO  c.g.reader.osm.WaySegmentParser - pass2 - finished, processed ways: 3,881,601, way nodes: 14,030,745, nodes with tags: 0, node tag capacity: 1,056,768, ignored barriers at junctions: 0
+01:49:25.268 [main] INFO  c.g.reader.osm.WaySegmentParser - pass2 - finished, took: 18.91s
+01:49:25.271 [main] INFO  c.g.reader.osm.WaySegmentParser - Finished reading OSM file. pass1: 5s,  pass2: 18s,  total: 24s memory: totalMB:1206, usedMB:691
+01:49:25.271 [main] INFO  c.graphhopper.reader.osm.OSMReader - Finished reading OSM file: /data/roads.osm.pbf, nodes: 3,710,962, edges: 3,881,601, zero distance edges: 3
+01:49:25.271 [main] INFO  com.graphhopper.GraphHopper - sorting graph along Hilbert curve.... (memory:totalMB:1206, usedMB:691)
+01:49:26.620 [main] INFO  com.graphhopper.GraphHopper - calculating sort order took: 1.35s, memory:totalMB:1206, usedMB:938
+01:49:26.680 [main] INFO  com.graphhopper.GraphHopper - sort graph for fixed ordering...
+01:49:27.998 [main] INFO  com.graphhopper.GraphHopper - sorting 3,881,601 edges took: 1.32s
+01:49:28.468 [main] INFO  com.graphhopper.GraphHopper - sorting 3,710,962 nodes took: 469.58ms
+01:49:28.471 [main] INFO  c.g.r.s.PrepareRoutingSubnetworks - Start marking subnetworks, prepare.min_network_size: 200, threads: 1, nodes: 3,710,962, edges: 3,881,601, jobs: [car_subnetwork|com.graphhopper.routing.weighting.custom.CustomWeighting@71ad3d8a], totalMB:1206, usedMB:1118
+01:49:30.616 [ForkJoinPool-1-worker-1] INFO  c.g.r.s.PrepareRoutingSubnetworks - car - Found 28817 subnetworks (0 single edges and 28817 components with more than one edge, total nodes: 7763202), took: 2.1368463s
+01:49:30.618 [ForkJoinPool-1-worker-1] INFO  c.g.r.s.PrepareRoutingSubnetworks - car - Marked 28777 subnetworks (biggest: 396 edges) -> 40 components(s) remain (smallest: 404, biggest: 6868010 edges), total marked edges: 98284, took: 6.417E-6s
+01:49:30.737 [main] INFO  c.g.r.s.PrepareRoutingSubnetworks - Finished finding and marking subnetworks for 1 jobs, took: 2.2658384s, totalMB:1368, usedMB:766
+01:49:30.738 [main] INFO  com.graphhopper.GraphHopper - nodes: 3,710,962, edges: 3,881,601
+01:49:32.174 [main] INFO  c.g.storage.index.LocationIndexTree - location index created in 1.4119052s, size:5,361,423, leafs:1,036,084, precision:300, depth:7, checksum:238963, entries:[16, 16, 16, 16, 16, 16, 4], entriesPerLeaf:5.1746993
+01:49:32.177 [main] INFO  c.g.routing.ch.CHPreparationHandler - Creating CH preparations, totalMB:1368, usedMB:666
+01:49:32.179 [main] INFO  c.g.routing.ch.CHPreparationHandler - 1/1 Setting up CH preparation for profile 'car' NODE_BASED ... (totalMB:1368, usedMB:666)
+01:49:32.194 [car] INFO  c.g.r.c.PrepareContractionHierarchies - Creating CH prepare graph, totalMB:1368, usedMB:771
+01:49:32.198 [car] INFO  c.g.r.c.PrepareContractionHierarchies - Building CH prepare graph, totalMB:1368, usedMB:867
+01:49:32.646 [car] INFO  c.g.r.c.PrepareContractionHierarchies - Finished building CH prepare graph, took: 0.44781694s, totalMB:1368, usedMB:1045
+01:49:32.665 [car] INFO  c.g.r.c.PrepareContractionHierarchies - Building initial queue of nodes to be contracted: 3710962 nodes, totalMB:1368, usedMB:1075
+01:49:35.570 [car] INFO  c.g.r.c.PrepareContractionHierarchies - Finished building queue, took: 2.9051871s, totalMB:1368, usedMB:1254
+01:49:35.572 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:  3,710,962, shortcuts:          0, updates:  0, checked-nodes:          0, t(total):   3.38,  t(period):   2.91, t(lazy):   0.00, t(neighbor):   0.00, t(contr):   0.00, t(other) :   0.47, dijkstra-ratio:  49.18%, meanDegree: 1.05, dijkstras:  9,343,490, mem:       28MB, totalMB:1368, usedMB:1254
+01:49:37.558 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:  2,969,105, shortcuts:      2,381, updates:  0, checked-nodes:    742,192, t(total):   5.36,  t(period):   2.91, t(lazy):   0.35, t(neighbor):   0.90, t(contr):   0.46, t(other) :   0.75, dijkstra-ratio:  42.98%, meanDegree: 2.00, dijkstras: 11,095,826, mem:       28MB, totalMB:1524, usedMB:971
+01:49:41.564 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:  2,226,959, shortcuts:     12,361, updates:  0, checked-nodes:  1,484,384, t(total):   9.37,  t(period):   2.91, t(lazy):   1.12, t(neighbor):   2.97, t(contr):   1.37, t(other) :   1.00, dijkstra-ratio:  47.47%, meanDegree: 2.00, dijkstras: 18,630,753, mem:       28MB, totalMB:1524, usedMB:1272
+01:49:45.860 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:  1,484,832, shortcuts:    255,005, updates:  0, checked-nodes:  2,226,576, t(total):  13.67,  t(period):   2.91, t(lazy):   1.92, t(neighbor):   5.26, t(contr):   2.34, t(other) :   1.24, dijkstra-ratio:  49.45%, meanDegree: 2.00, dijkstras: 26,606,744, mem:       28MB, totalMB:1524, usedMB:1076
+01:49:51.249 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:    743,392, shortcuts:  1,503,948, updates:  0, checked-nodes:  2,968,768, t(total):  19.05,  t(period):   2.91, t(lazy):   3.00, t(neighbor):   8.12, t(contr):   3.52, t(other) :   1.51, dijkstra-ratio:  51.70%, meanDegree: 2.00, dijkstras: 35,579,918, mem:       28MB, totalMB:1524, usedMB:1201
+01:50:03.928 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:     27,337, shortcuts:  3,034,589, updates:  0, checked-nodes:  3,710,960, t(total):  31.73,  t(period):   2.91, t(lazy):   6.39, t(neighbor):  14.53, t(contr):   6.05, t(other) :   1.86, dijkstra-ratio:  60.83%, meanDegree: 3.43, dijkstras: 50,567,230, mem:       28MB, totalMB:1700, usedMB:1347
+01:50:08.295 [car] INFO  c.g.r.c.PrepareContractionHierarchies - node, nodes:          0, shortcuts:  3,175,527, updates:  0, checked-nodes:  3,747,299, t(total):  36.10,  t(period):   2.91, t(lazy):   7.72, t(neighbor):  16.59, t(contr):   6.87, t(other) :   2.02, dijkstra-ratio:  63.75%, meanDegree: 1.35, dijkstras: 54,618,307, mem:       28MB, totalMB:1700, usedMB:1390
+01:50:08.299 [car] INFO  c.g.r.c.PrepareContractionHierarchies - new shortcuts: 3,175,527, initSize:3,710,962, com.graphhopper.routing.weighting.custom.CustomWeighting@682a9bcd, periodic:0, lazy:100, neighbor:100, t(total):  36.10,  t(period):   2.91, t(lazy):   7.72, t(neighbor):  16.59, t(contr):   6.87, t(other) :   2.02, dijkstra-ratio:  63.75%, lazy-overhead: 0%, totalMB:1700, usedMB:1390
+01:50:08.299 [car] INFO  c.g.r.c.PrepareContractionHierarchies - shortcut weights - under minimum: 0, over maximum: 0, minimum valid: 2.0, maximum valid: 259646.0
+01:50:08.299 [car] INFO  c.g.r.c.PrepareContractionHierarchies - took: 36s, graph now - num edges: 3,881,601, num nodes: 3,710,962, num shortcuts: 3,175,527
+01:50:08.492 [main] INFO  c.g.routing.ch.CHPreparationHandler - Finished CH preparation, totalMB:1700, usedMB:1570
+01:50:08.493 [main] INFO  com.graphhopper.GraphHopper - CH available for profile car, 0MB, shortcuts:3,175,527 (0MB), nodesCH:3,710,962 (0MB), (88MB)
+01:50:08.498 [main] INFO  com.graphhopper.GraphHopper - flushing graph car|RAM_STORE|2D|no_turn_cost|nodes:9,edges:24,geometry:9,location_index:5,string_index:2,nodesCH:0,shortcuts:11, details:edges: 3,881,601(130MB), nodes: 3,710,962(43MB), bounds: 122.9353236,153.9788764,24.0467017,45.5222823, name:(1MB), geo:34,615,875/-1(34MB), totalMB:1700, usedMB:1571)
+01:50:08.930 [main] INFO  com.graphhopper.GraphHopper - flushed graph totalMB:1700, usedMB:1657)
+real 69.99
+user 0.01
+sys 0.01
+exit 0

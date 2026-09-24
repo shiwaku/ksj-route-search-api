@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# ── データ（大容量・再生成可能）────────────────────
+# ※ gitignore は行末コメントを解釈しないので、必ず単独行に書く
+# 国土数値情報 原データ（zip / geojson / geoparquet）約 5.6 GB
+input/
+# 生成したネットワーク・CSV 約 1.1 GB
+network/
+*.pmtiles
+
+# macOS
+.DS_Store
+
+# ── ADR-1 追記: 専用エンジン比較の生成物（bench/*/ の PBF・前処理データ 数 GB）。設定ファイルだけ残す ──
+bench/**/*.pbf
+bench/**/*.osrm*
+bench/valhalla/tiles/
+bench/valhalla/*.tar
+bench/graphhopper/graph-cache/

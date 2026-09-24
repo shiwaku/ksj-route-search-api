@@ -1,0 +1,47 @@
+# ブックマーク用の PostgreSQL / PostGIS（設計書 4 章）
+# kartoza/postgis:15-3（PostGIS 3.4・pgRouting 3.5 同梱）を、
+# 既存のローカル PostgreSQL（5432）とぶつからないよう 5433 で立てる。
+# スキーマは API 起動時に api/db.py が CREATE TABLE IF NOT EXISTS で作る。
+#
+#   open -a Docker      # Docker Desktop が落ちていると次の行が "Cannot connect to the Docker daemon" で止まる
+#   docker compose up -d
+#   docker compose exec -T -e PGPASSWORD=route db psql -h localhost -U route -d route
+#     ↑ ホストに psql は無いのでコンテナ内のを使う。-h localhost を省くと peer 認証で弾かれる
+services:
+  api:
+    build: .
+    container_name: ksj-route-api
+    ports:
+      - "${API_PORT:-8000}:8000"        # ホスト側で uvicorn を別に動かしているときは API_PORT=8001 で避ける
+    environment:
+      DATABASE_URL: postgresql://route:route@db:5432/route   # コンテナ間は compose のネットワーク名 db・内部ポート 5432
+      ROUTE_LINKS_HARD_MAX: ${ROUTE_LINKS_HARD_MAX:-1000000}
+    volumes:
+      - ./network:/app/network:ro       # 探索グラフの parquet（リンク 304 MB + ノード 77 MB・git 管理外。フォルダ全体は CSV・PMTiles 込みで 4 GB）。イメージに焼かず読み取り専用で渡す
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if b'\"graph_loaded\":true' in urllib.request.urlopen('http://localhost:8000/health').read() else 1)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 60s
+  db:
+    image: kartoza/postgis:15-3
+    container_name: ksj-route-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: route
+      POSTGRES_USER: route
+      POSTGRES_PASS: route
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U route -d route"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db-data:
