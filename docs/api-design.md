@@ -644,5 +644,8 @@ Starlette 既定の lv9 は 120 分で **1,790 ms**（サーバー側の 88%）�
 
 ### ADR-10 デプロイ: しない（ローカルデモ）
 
+> **更新（2026-09-25）: Cloudflare Workers + Containers で公開する方針に変更。DB は持っていかない。**
+> 設計は [`deploy-cloudflare.md`](deploy-cloudflare.md)。以下は当初の判断として残す。
+
 デモの芯（全国で 1 秒以内・高速あり/なし・pgRouting 比較）はローカルで見せられる。API は 2.9 GB のため EC2 なら t3.large 級が要り半日〜1 日食う。
 余力があれば S3 に PMTiles を置く（1 時間）だけ。
