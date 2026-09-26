@@ -7,7 +7,7 @@
 	// 全国 PMTiles（feature id = link_id）。到達圏は setFeatureState で着色する（設計書 1-1）
 	const SOURCE = 'roads';
 	const SOURCE_LAYER = 'roads';
-	const TILES = `pmtiles://${location.origin}/roads_nationwide.pmtiles`;
+	const TILES = `pmtiles://${location.origin}/tiles/roads_nationwide.pmtiles`; // 本番は Worker が R2 から、ローカルは static/tiles/
 	const LIMITS = [15, 30, 60, 120, 240, 480, 720, 1200, 1920]; // 東京起点は 1,200 分、鹿児島起点は 1,800 分で本州・四国・九州の全域に到達。1,920 = 80 分 × 24 帯
 
 	type LatLon = { lat: number; lon: number };
@@ -33,6 +33,7 @@
 	let overlayReady = $state(false);
 
 	const ready = $derived((health?.graph_loaded ?? false) && overlayReady);
+	const hasBookmarks = $derived(health?.features?.includes('bookmarks') ?? false); // DB なし（公開版）では出さない
 
 	// ---- 地図
 	// 到達時間の色: 離散バンド（近い=暖色 → 遠い=寒色）。連続グラデーションは中間の淡い黄色が淡色地図に溶けて「空洞」に見えたので離散に変えた。
@@ -121,11 +122,17 @@
 		map.addControl(new maplibregl.ScaleControl());
 		map.on('click', onClick);
 
-		const poll = setInterval(async () => {
+		// 応答を待ってから 1 秒後に次を投げる。公開版はコンテナが寝ていると最初の 1 本が起動まで返らない
+		// （コールドスタート）ので、setInterval だと待ちのリクエストが積み上がる
+		let stopped = false, timer: ReturnType<typeof setTimeout>;
+		const poll = async () => {
 			try { health = await api.health(); } catch { health = { status: 'loading', graph_loaded: false }; }
-			if (health.graph_loaded) { clearInterval(poll); loadBookmarks(); }
-		}, 1000);
-		return () => { clearInterval(poll); map?.remove(); };
+			if (stopped) return;
+			if (health.graph_loaded) { if (health.features?.includes('bookmarks')) loadBookmarks(); }
+			else timer = setTimeout(poll, 1000);
+		};
+		poll();
+		return () => { stopped = true; clearTimeout(timer); map?.remove(); };
 	});
 
 	// 打ち切り時間が変わったら色の目盛りも合わせる。
@@ -331,6 +338,7 @@
 			</dl>
 		{/if}
 
+		{#if hasBookmarks}
 		<section class="border-t pt-2">
 			<h2 class="mb-1 font-semibold">ブックマーク</h2>
 			{#if bmError}<p class="mb-1 text-xs text-red-700">{bmError}</p>{/if}
@@ -351,5 +359,6 @@
 				{/each}
 			</ul>
 		</section>
+		{/if}
 	</aside>
 </div>

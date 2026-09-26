@@ -119,6 +119,7 @@ uv run python preprocess/make_pmtiles.py --case nationwide
 ```
 
 `input/geoparquet/N13-24_*.parquet` に国土数値情報の道路データを配置しておくこと。
+画面は道路タイルを `web/static/tiles/roads_nationwide.pmtiles` から読むので、生成した PMTiles をそこにリンクかコピーで置く。
 
 ---
 
@@ -140,7 +141,8 @@ API の状態は `docker compose ps`（`healthy` になれば `/health` が `gra
 API はコンテナで 3.0 GB 使う。Docker Desktop のメモリ上限（Settings → Resources）が 4 GB 未満だと起動に失敗する。
 
 API のコードを直したら `docker compose up -d --build api`。コンテナを使わずホストで動かすとき（デバッガを付けたい・起動を速くしたい）は
-`API_PORT=8001 docker compose up -d`（コンテナ側を 8001 に退避）してから `uv run uvicorn api.main:app --port 8000`。
+`API_PORT=8001 docker compose up -d`（コンテナ側を 8001 に退避）してから `DATABASE_URL=postgresql://route:route@localhost:5433/route uv run uvicorn api.main:app --port 8000`。
+`DATABASE_URL` を付けないと DB なし（公開版と同じ・ブックマークと `/bench` が 404）で起動する。
 探索グラフの parquet（`network/`・git 管理外）はイメージに焼かず、compose の bind mount で `/app/network` に読み取り専用で渡している。
 
 終了は ② のタブで `Ctrl+C`、バックエンドは次で片付ける（ボリュームは残るのでブックマークは消えない）:
@@ -184,6 +186,11 @@ curl 'localhost:8000/bench?limit_min=30&bbox=true'   # エッジを bbox で絞�
 ```
 
 ---
+
+## 一般公開（Cloudflare）
+
+Cloudflare Workers + Containers で公開する（DB なし。ブックマークと `/bench` は出ない）。設計は [`docs/deploy-cloudflare.md`](docs/deploy-cloudflare.md)、手順は [`deploy/cloudflare/README.md`](deploy/cloudflare/README.md)。
+画面の API は本番もローカルも同一オリジンの `/api`（ローカルは Vite の proxy が `/api` を剥がして `localhost:8000` に渡す）。
 
 ## API
 

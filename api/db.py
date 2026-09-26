@@ -10,7 +10,9 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 
-DSN = os.environ.get('DATABASE_URL', 'postgresql://route:route@localhost:5433/route')
+# 未設定 = DB なし（Cloudflare 公開版・deploy-cloudflare.md 5 章）。ブックマークと /bench を登録せず、/health も接続しない。
+# ローカルは compose が設定する。ホストで uvicorn を動かすときは DATABASE_URL=postgresql://route:route@localhost:5433/route
+DSN = os.environ.get('DATABASE_URL')
 
 SCHEMA = """
 CREATE EXTENSION IF NOT EXISTS postgis;

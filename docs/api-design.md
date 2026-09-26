@@ -404,8 +404,8 @@ CREATE INDEX bookmarks_geom_idx ON bookmarks USING gist (geom);
 |---|---|---|
 | 道路タイル | `roads_nationwide.pmtiles` | 全国 **200 MB**・z6-13・レイヤ `roads`。**ズーム別に道路種別を出し分け**（z6-10 高速・国道・都道府県道 / z11- 全部）・タイル上限 1.5 MB。 |
 
-開発では `web/static/roads_nationwide.pmtiles` → `network/nationwide/` のシンボリックリンクを **Vite の静的配信**で出す
-（HTTP Range に対応・206 を確認）。API は経由しない。本番で置くなら S3（Range 対応）。
+開発では `web/static/tiles/roads_nationwide.pmtiles` → `network/nationwide/` のリンクを **Vite の静的配信**で出す
+（HTTP Range に対応・206 を確認）。API は経由しない。公開版は R2 に置き、Worker が `/tiles/` で返す（`deploy-cloudflare.md` 3 章）。
 
 タイルに載る属性は **`road_type` のみ**。`link_id` は**フィーチャ ID** に昇格させてあり、
 `setFeatureState` の対象キーになる。

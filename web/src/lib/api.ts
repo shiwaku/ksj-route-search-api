@@ -1,5 +1,6 @@
 // FastAPI（docs/api-design.md v0.3）の型付きクライアント
-export const API = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:8000';
+// 同一オリジンの /api。本番は Worker が、ローカルは Vite の proxy が /api を剥がして FastAPI に渡す
+export const API = '/api';
 
 export type RoadClass = 'auto' | 'all' | 'trunk' | 'major';
 export type Tier = 'ok' | 'heavy';
@@ -11,6 +12,7 @@ export interface Health {
 	nodes?: number;
 	load_seconds?: number;
 	error?: string;
+	features?: ('bookmarks' | 'bench')[]; // DB があるときだけ。公開版は空
 }
 
 export interface Reachability {
