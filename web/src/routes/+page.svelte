@@ -269,7 +269,7 @@
 				{:else if health?.status === 'error'}
 					<span class="text-red-700">● API エラー: {health.error}</span>
 				{:else}
-					<span class="animate-pulse text-amber-600">● グラフ読み込み中…（約 5 秒）</span>
+					<span class="animate-pulse text-amber-600">● API 起動中…（しばらく使われていないと 1 分ほど掛かります）</span>
 				{/if}
 			</p>
 		</header>

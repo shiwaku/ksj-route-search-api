@@ -4,7 +4,7 @@ Route Search API を Cloudflare Workers + Containers で公開する
 
 | | |
 |---|---|
-| 版 | 0.2（2026-09-26・実装済み・ローカル計測 V1〜V3 済み。実機デプロイ前） |
+| 版 | 0.3（2026-09-26・デプロイ済み https://ksj-route-search.shi-works-worker.workers.dev ・V1〜V5 済み） |
 | 対象 | 探索系（`/health` `/reachability` `/route`）と画面。**DB（PostgreSQL / PostGIS）は持っていかない** |
 | お手本 | [shiwaku/npa-traffic-accident-analytics `deploy/cloudflare/`](https://github.com/shiwaku/npa-traffic-accident-analytics/tree/main/deploy/cloudflare)（2026-09-21 から同じ構成で運用中） |
 | 置き換える決定 | [`api-design.md` ADR-10「デプロイ: しない」](api-design.md#adr-10-デプロイしないローカルデモ) |
@@ -59,7 +59,7 @@ flowchart LR
 |---|---|---|---|
 | 受付 | **Worker** | パスで Assets / R2 / Container に振り分ける。数十行 | `deploy/cloudflare/src/worker.ts` |
 | 画面 | **Workers Static Assets** | `web/` を `adapter-static` で build した出力 | `web/build/`（wrangler.jsonc の `assets.directory` から参照） |
-| 道路タイル | **R2** | `roads_nationwide.pmtiles`（200 MB・1 ファイル） | バケットに `wrangler r2 object put` で置く（git 管理外） |
+| 道路タイル | **R2** | `roads_nationwide_N13-24.pmtiles`（200 MB・1 ファイル） | 共有バケット `shi-works` の `pmtiles/ksj-route-search/`（バケットのキー規約に従う。版ごとに別キー。手順は `deploy/cloudflare/README.md`） |
 | API | **Containers** | FastAPI（今の `Dockerfile` とほぼ同じ）＋グラフ parquet | `deploy/cloudflare/Dockerfile` |
 | 設定 | wrangler | 上 4 つをまとめて定義 | `deploy/cloudflare/wrangler.jsonc` |
 
@@ -169,8 +169,8 @@ flowchart LR
 | V1 | standard-1 でメモリが足りるか | `docker run --memory=4g --cpus=0.5` で起動し、`limit_min=480` を連打 | OOM で落ちない → **合格**（下記） |
 | V2 | 1/2 vCPU での起動時間 | V1 の `/health` の `load_seconds` | 60 秒以内 → **28.4 秒**（parquet 焼き込みの公開版イメージ） |
 | V3 | 1/2 vCPU での探索時間 | 東京駅起点 30 / 120 / 480 分、東京→大阪の `/route` | 480 分で 3 秒以内 → **合格**（下記） |
-| V4 | 実機のコールドスタート | お手本の `probe.py` の要領で、寝ている状態から `/api/health` が `ok` になるまで | 記録するだけ |
-| V5 | R2 経由のタイル | ブラウザの Network で `/tiles/*` が 206、パンが重くない | 206・目視で許容 |
+| V4 | 実機のコールドスタート | お手本の `probe.py` の要領で、寝ている状態から `/api/health` が `ok` になるまで | 記録するだけ → **49 秒**（応答開始 6.4 秒・グラフ読み込み 43.9 秒。ローカルより遅い） |
+| V5 | R2 経由のタイル | ブラウザの Network で `/tiles/*` が 206、パンが重くない | 206・目視で許容 → curl で 206・中身一致を確認。ブラウザの目視は未 |
 | V6 | スリープ | 10〜16 分後に `wrangler containers instances <ID>` の `STATE` が `inactive` | `inactive`（`LIVE INSTANCES` は寝ていても 1 のままなので使わない） |
 
 ### V1〜V3 の結果（ローカル Docker・2026-09-26）
@@ -226,7 +226,7 @@ flowchart LR
 | # | 項目 | 状況 |
 |---|---|---|
 | ① | ~~誰に公開するか~~ | **一般公開に決定**（2026-09-26）。認証は付けない |
-| ② | ~~重いリクエストの制限~~ | **決定**: コンテナ内で到達圏の同時計算を 2 本に制限（PR #2）＋ Worker の Rate Limiting で `/api/reachability` `/api/route` を IP ごとに 120 回/分。会場や社内の Wi-Fi では同じ IP を大勢で共有するので緩めにした。当たるようなら `wrangler.jsonc` の `limit` を上げる |
+| ② | ~~重いリクエストの制限~~ | **決定**: コンテナ内で到達圏の同時計算を 2 本に制限（PR #2）＋ Worker の Rate Limiting で `/api/reachability` `/api/route` を IP ごとに 10 秒 20 回。会場や社内の Wi-Fi では同じ IP を大勢で共有するので緩めにした。**Rate Limiting は大まかにしか効かない**（実機で 60 秒 120 回は 300 回連打しても効かず、並列だと上限を超えて通る）ので歯止め程度。落ちない保証は同時計算の制限で持つ |
 | ③ | ドメイン | 当面は `*.shi-works-worker.workers.dev`。独自ドメインにするかは後で |
-| ④ | 起動中の画面表示 | V2・V4 の結果次第（4-3） |
+| ④ | 起動中の画面表示 | V4 が 49 秒で 1 分以内。画面は「API 起動中…（しばらく使われていないと 1 分ほど掛かります）」と出す（前は「約 5 秒」でローカル向けだった） |
 | ⑤ | ~~standard-1 で足りるか~~ | **足りる**（8 章 V1〜V3 の結果） |

@@ -26,3 +26,6 @@ bench/**/*.osrm*
 bench/valhalla/tiles/
 bench/valhalla/*.tar
 bench/graphhopper/graph-cache/
+
+# Claude Code の個人設定
+.claude/settings.local.json

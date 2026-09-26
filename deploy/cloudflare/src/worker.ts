@@ -23,7 +23,10 @@ interface Env {
 const API_PATHS = new Set(["/health", "/reachability", "/route"]);
 const LIMITED = new Set(["/reachability", "/route"]);
 const TILE_PATH = "/tiles/roads_nationwide.pmtiles";
-const TILE_KEY = "roads_nationwide.pmtiles";
+// 共有バケット shi-works のキー。第 1 階層はアクセス方法（pmtiles/）、第 2 階層はプロジェクト名
+// （xserver-cleanup の R2-STRUCTURE.md §4）。ファイル名の版（N13-24）はグラフ parquet と揃える。
+// データを更新するときは新しい版を別キーで置き、ここを書き換えてイメージと同時にデプロイする（README「データの更新」）
+const TILE_KEY = "pmtiles/ksj-route-search/roads_nationwide_N13-24.pmtiles";
 
 const json = (status: number, detail: string, headers: HeadersInit = {}) =>
   Response.json({ detail }, { status, headers });
@@ -90,7 +93,7 @@ function tileHeaders(obj: R2Object): Headers {
   headers.set("ETag", obj.httpEtag);
   headers.set("Accept-Ranges", "bytes");
   headers.set("Content-Type", "application/octet-stream");
-  // タイルは国土数値情報の年次更新でしか変わらない。変えるときはファイル名ごと変える
-  headers.set("Cache-Control", "public, max-age=86400");
+  // shi-works バケットの規約（R2-STRUCTURE.md §6.6）に合わせる。版を変えると ETag が変わる
+  headers.set("Cache-Control", "public, max-age=3600");
   return headers;
 }
