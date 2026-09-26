@@ -11,6 +11,7 @@ Route Search API（FastAPI）— 全国道路ネットワークの到達圏分�
 import asyncio
 import ctypes
 import gc
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -78,6 +79,11 @@ def health():
             'graph_loaded': g is not None,
             'uptime_seconds': round(time.time() - state['started_at'], 1),
             'features': FEATURES}
+    # 公開版（Cloudflare Containers）では、コンテナが動いている拠点が入る（例: bom03 = ムンバイ）。
+    # 拠点は「リクエスト元に一番近い、イメージを取得済みの拠点」で決まり、遠いと Worker との往復が遅い（2026-09-26）
+    if os.environ.get('CLOUDFLARE_LOCATION'):
+        body['location'] = os.environ['CLOUDFLARE_LOCATION']
+        body['region'] = os.environ.get('CLOUDFLARE_REGION')
     if g:
         body.update(g.health())
     if state['error']:
