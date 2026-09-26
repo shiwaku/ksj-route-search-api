@@ -117,6 +117,7 @@
 			style: '/styles/pale.json'
 		});
 		map.on('load', addOverlay);
+		map.on('sourcedata', onTileData);
 		if (import.meta.env.DEV) (window as unknown as { __map: Map }).__map = map; // 開発時のみ: Playwright から計測するため
 		map.addControl(new maplibregl.NavigationControl(), 'top-right');
 		map.addControl(new maplibregl.ScaleControl());
@@ -157,6 +158,8 @@
 	function clearReach() {
 		map?.removeFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER });
 		reach = null;
+		reachCost = null;
+		painted.clear();
 	}
 	function clearRoute() {
 		(map?.getSource('route') as maplibregl.GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: [] });
@@ -164,13 +167,40 @@
 	}
 
 	// ---- 到達圏: API → setFeatureState で着色。描画時間も測って表示する
+	// 塗るのは「読み込み済みのタイルに入っているリンク」だけ（issue #8）。
+	// MapLibre は setFeatureState のたびに、読み込み済みタイル 1 枚ごとに変更した ID を全部照合する（タイル枚数 × 本数）。
+	// 120 分の 78.6 万本を一度に塗ると 1 フレームで 1.8〜2 秒止まっていた。見えている分（z13 で約 2 万本）だけなら 0.2 秒。
+	// 地図を動かして新しいタイルが来たら、その分を塗り足す（onTileData）
+	// Map は maplibre-gl の型名と衝突する（import type { Map }）ので globalThis.Map と書く
+	let reachCost: globalThis.Map<number, number> | null = null; // link_id → コスト（到達したリンク全部）
+	const painted = new Set<number>(); // 塗り済みの link_id
+
+	function paintLoaded() {
+		if (!reachCost || !map) return;
+		for (const f of map.querySourceFeatures(SOURCE, { sourceLayer: SOURCE_LAYER })) {
+			const id = f.id as number;
+			if (painted.has(id)) continue;
+			painted.add(id);
+			const c = reachCost.get(id);
+			if (c !== undefined) map.setFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER, id }, { cost: c });
+		}
+	}
+
+	// タイルが届くたびに呼ばれる。まとめて届くので 1 フレームに 1 回だけ塗り足す
+	let tileFrame = 0;
+	function onTileData(e: maplibregl.MapSourceDataEvent) {
+		if (e.sourceId !== SOURCE || !e.tile || !reachCost || tileFrame) return;
+		tileFrame = requestAnimationFrame(() => { tileFrame = 0; paintLoaded(); });
+	}
+
 	async function paint(r: Reachability) {
 		const t0 = performance.now();
 		map!.removeFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER });
+		painted.clear();
 		const { link_ids, costs } = r;
-		for (let i = 0; i < link_ids.length; i++) {
-			map!.setFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER, id: link_ids[i] }, { cost: costs[i] });
-		}
+		reachCost = new globalThis.Map();
+		for (let i = 0; i < link_ids.length; i++) reachCost.set(link_ids[i], costs[i]);
+		paintLoaded();
 		await idle();
 		paintMs = Math.round(performance.now() - t0);
 	}
