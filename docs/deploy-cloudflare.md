@@ -103,6 +103,12 @@ flowchart LR
 お手本が (b) なのは、データ（事故統計）をイメージと別に更新したいから。こちらのグラフは国土数値情報の年次更新でしか変わらず、変えるときは PMTiles と `link_id` を揃えて作り直す必要がある（`api-design.md` 5 章の注意）。**グラフとコードが同じイメージに入っている方が、`link_id` がずれる事故が起きない。**
 
 イメージは今の API イメージ 1.95 GB ＋ parquet 0.38 GB で約 2.3 GB。上限（= disk 8 GB）の内側。
+
+**2026-09-26 変更（issue #7）: parquet ではなく、組み立て済みのグラフ（`.npy` 群・674 MiB）を焼く。**
+parquet から組み立てると、実機で起動のたびに 43.9 秒掛かっていた（WKB の変換・ID の重複除去・文字列 ID の変換など、毎回同じ結果になる処理）。
+`preprocess/build_graph_arrays.py` で一度だけ組み立てて書き出し、API は起動時に読むだけにした。
+実機の読み込みは 43.9 秒 → 9.8 秒、ローカル（1/2 vCPU）は 28.4 秒 → 2.9 秒、常駐メモリは 2.35 GiB → 1.02 GiB。イメージは約 2.9 GB。
+組み立て済みのグラフも parquet・PMTiles と同じ版名（`KSJ_N13-24_…`）で揃える。以下の「parquet」は組み立て済みのグラフと読み替える。
 レイヤの順は「依存 → parquet → `api/`」にして、コードだけ直したときは小さいレイヤしか上がらないようにする。
 ルートの `.dockerignore` を許可リストにして parquet を含める（実装時に変更）。当初は Dockerfile ごとの ignore（`Dockerfile.dockerignore`）を置く案だったが、wrangler は Dockerfile を標準入力（`-f -`）で渡すのでそれが効かない。compose 用の Dockerfile は parquet を `COPY` しないので、そちらのイメージは変わらない。
 

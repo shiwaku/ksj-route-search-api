@@ -92,6 +92,7 @@ pgRouting は比較のために計測し、選択の根拠として示す。
 | `bench_dijkstra.py` | 縮約前後の速度比較 |
 | `export_for_pgrouting.py` | pgRouting 用 CSV 書き出し + scipy 側の正解算出 |
 | `ksj_to_network_csv.py` | 既存実装（`ksj-reachability-analysis` からのコピー・比較用） |
+| `build_graph_arrays.py` | リンク/ノード parquet → 組み立て済みの探索グラフ（`.npy` 群・674 MiB）。API の起動が parquet からの組み立て（1/2 vCPU 29 秒）から読むだけ（2.9 秒）になる。公開版のイメージにはこれを焼く |
 | `make_pmtiles.py` | リンク parquet → PMTiles。**全国 200 MB・1.5 分**（z6-13・ズーム別に道路種別を出し分け。`--no-zoom-filter` `--max-tile-bytes` あり） |
 | `bench_scale.py` | 規模別ベンチ（scipy / NetworkX）。**入れ子6規模・同一始点** |
 | `bench_pgrouting_scale.py` | 規模別ベンチ（pgRouting）。ジオメトリなしで投入 |
@@ -116,7 +117,13 @@ uv run python preprocess/router.py --case 6441_drm --limit 3000 --validate 10
 
 # 道路タイルを生成（全国 193 MB・1.5分）
 uv run python preprocess/make_pmtiles.py --case nationwide
+
+# 探索グラフを組み立てて書き出す（全国 15 秒）。API はこれがあれば起動時に読むだけになる
+uv run python preprocess/build_graph_arrays.py --case nationwide
 ```
+
+parquet を作り直したら `build_graph_arrays.py` も実行し直す。API は `meta.json` に記録した parquet の大きさと
+手元の parquet が違えば、組み立て済みを使わずに parquet から組み立てる（`/health` の `graph_source` が `parquet` になる）。
 
 `input/geoparquet/N13-24_*.parquet` に国土数値情報の道路データを配置しておくこと。
 画面は道路タイルを `web/static/tiles/roads_nationwide.pmtiles` から読むので、生成した PMTiles をそこにリンクかコピーで置く。

@@ -18,16 +18,15 @@ make_pmtiles.py と同じく、**行インデックスを link_id とする**約
 - 到達圏は road_class（all / trunk / major / auto）で絞り、上限は分ではなく **リンク 100 万本**
 """
 
+import json
 import math
 import os
 import time
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import geopandas as gpd
-import pyarrow.parquet as pq
-import shapely
+# pandas / geopandas / pyarrow / shapely は parquet から組み立てるときだけ使うので、その関数の中で import する。
+# 組み立て済みを読む公開版では import しない（1/2 vCPU で 2.5 秒掛かっていた）
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components, dijkstra
 from scipy.spatial import KDTree
@@ -53,6 +52,14 @@ LINKS_HARD_MAX = int(os.environ.get('ROUTE_LINKS_HARD_MAX', 1_000_000))
 # 東京→大阪は直線 400 km・379.6 分（0.95 分/km）。高速なしは一般道だけなので大きめに見る
 ROUTE_MIN_PER_KM = {True: 1.0, False: 1.6}
 ROUTE_LIMIT_TRIES = 3
+
+# 組み立て済みグラフ（preprocess/build_graph_arrays.py が書き出す .npy 群）の形式の版。
+# 保存する配列を変えたら上げる。meta.json の版が違えば読まずに parquet から組み立てる
+PREBUILT_FORMAT = 1
+# 保存する配列。w_* は cost × 高速あり/なし の 4 本の重み（CSR 構造 indices / indptr は共有）
+PREBUILT_ARRAYS = ('indices', 'indptr', 'w_time_exp', 'w_time_noexp', 'w_dist_exp', 'w_dist_noexp',
+                   'i1', 'i2', 'is_expressway', 'mask_trunk', 'mask_major', 'component',
+                   'kd_idx', 'kd_lat', 'kd_lon', 'link_dist', 'link_time', 'pk_order', 'coords', 'coord_offsets')
 
 
 class TooManyLinks(Exception):
@@ -89,6 +96,8 @@ def _csr_structure(n1, n2, uniq):
 
 def _load_geometry(path):
     """リンク parquet の geometry 列 → (座標 float32 [N,2] (lon,lat), リンクごとの offsets [L+1])"""
+    import pyarrow.parquet as pq
+    import shapely
     pf = pq.ParquetFile(path)
     chunks, counts = [], []
     for rg in range(pf.num_row_groups):
@@ -102,82 +111,171 @@ def _load_geometry(path):
     return coords, offsets
 
 
-class RoadGraph:
-    """道路リンク/ノード parquet から探索グラフを組む（起動時に1回・全国で約 5 秒）"""
+def _parquet_paths(d, case):
+    return d / f'KSJ_N13-24_{case}_道路リンク.parquet', d / f'KSJ_N13-24_{case}_道路ノード.parquet'
 
-    def __init__(self, case='nationwide', net_dir='network'):
+
+def prebuilt_dir(d, case):
+    """組み立て済みグラフの置き場所。版名は parquet・PMTiles と揃える"""
+    return d / f'KSJ_N13-24_{case}_graph'
+
+
+def _source_signature(d, case):
+    """組み立ての元にした parquet の大きさ。変わっていれば組み立て済みグラフは古い"""
+    return {p.name: p.stat().st_size for p in _parquet_paths(d, case) if p.exists()}
+
+
+class RoadGraph:
+    """探索グラフ。起動時に 1 回作る。
+
+    組み立て済みの配列（prebuilt_dir）があればそれを読むだけ（公開版・issue #7）。無ければ parquet から組み立てる
+    （全国で 1/2 vCPU 29 秒・本番 44 秒掛かっていた）。組み立て済みは preprocess/build_graph_arrays.py で作る。
+    """
+
+    def __init__(self, case='nationwide', net_dir='network', prebuilt=True):
         t0 = time.perf_counter()
         d = BASE / net_dir / case
-        # ジオメトリ列を読まない（290 MB の WKB を触らずに済む）ので pandas 側を使う
-        links = pd.read_parquet(
-            d / f'KSJ_N13-24_{case}_道路リンク.parquet',
-            columns=['node1', 'node2', 'dist_m', 'time_001min', 'N13_003'])
-        nodes = gpd.read_parquet(d / f'KSJ_N13-24_{case}_道路ノード.parquet')
-
         self.case = case
+        pre = prebuilt_dir(d, case)
+        if prebuilt and self._prebuilt_usable(pre, d, case):
+            self._load_prebuilt(pre)
+            self.source = 'prebuilt'
+        else:
+            self._build(d, case)
+            self.source = 'parquet'
+        self._finish()
+        self.load_seconds = time.perf_counter() - t0
+
+    # ------------------------------------------------------------------ 組み立て
+    def _build(self, d, case):
+        import geopandas as gpd
+        import pandas as pd
+        link_path, node_path = _parquet_paths(d, case)
+        # ジオメトリ列を読まない（290 MB の WKB を触らずに済む）ので pandas 側を使う
+        links = pd.read_parquet(link_path, columns=['node1', 'node2', 'dist_m', 'time_001min', 'N13_003'])
+        nodes = gpd.read_parquet(node_path)
+
         n1 = links['node1'].astype('int64').to_numpy()
         n2 = links['node2'].astype('int64').to_numpy()
         self.n_links = len(links)
-        self.uniq = np.unique(np.concatenate([n1, n2]))
-        self.n_nodes = len(self.uniq)
+        uniq = np.unique(np.concatenate([n1, n2]))
+        self.n_nodes = len(uniq)
 
         # --- 道路種別マスク（road_class・use_expressway 用）
         c3 = links['N13_003'].to_numpy()
         self.is_expressway = c3 == EXPRESSWAY
-        self.class_mask = {'all': np.ones(self.n_links, dtype=bool)}
-        for k, codes in ROAD_CLASS.items():
-            self.class_mask[k] = np.isin(c3, codes)
+        self._mask_trunk = np.isin(c3, ROAD_CLASS['trunk'])
+        self._mask_major = np.isin(c3, ROAD_CLASS['major'])
 
         # --- CSR 構造 1 本 ＋ 重み配列 4 本（cost × 高速あり/なし）。構造は共有、data だけ違う
-        (self.i1, self.i2, indices, indptr,
-         self._starts, self._link_of_entry) = _csr_structure(n1, n2, self.uniq)
-        shape = (self.n_nodes, self.n_nodes)
-        self.graphs = {}
+        self.i1, self.i2, self._indices, self._indptr, starts, link_of_entry = _csr_structure(n1, n2, uniq)
+        self._w = {}
         for cost, col in COST_COL.items():
             w = links[col].to_numpy().astype(np.float64)
-            self.graphs[(cost, True)] = csr_matrix((self._weights(w), indices, indptr), shape=shape)
-            self.graphs[(cost, False)] = csr_matrix(
-                (self._weights(np.where(self.is_expressway, np.inf, w)), indices, indptr), shape=shape)
-        self.G = self.graphs[('time', True)]      # 既定（後方互換）
+            self._w[(cost, True)] = self._weights(w, starts, link_of_entry)
+            self._w[(cost, False)] = self._weights(np.where(self.is_expressway, np.inf, w), starts, link_of_entry)
 
-        # --- 連結成分。小さい成分（孤島）はスナップ対象から外す
-        self.n_components, self.component = connected_components(self.G, directed=False)
-        sizes = np.bincount(self.component)
-        self.component_size = sizes[self.component]           # ノードごとの所属成分サイズ
-        eligible = self.component_size >= MIN_COMPONENT_NODES
+        # --- 連結成分（孤島はスナップ対象から外すため）
+        G = csr_matrix((self._w[('time', True)], self._indices, self._indptr), shape=(self.n_nodes, self.n_nodes))
+        _, self.component = connected_components(G, directed=False)
+        component_size = np.bincount(self.component)[self.component]
+        eligible = component_size >= MIN_COMPONENT_NODES
 
-        # --- KDTree はスナップ対象ノードだけで組む
+        # --- KDTree の対象はスナップ対象ノードだけ
         nid = nodes['node_id'].astype('int64').to_numpy()
-        gidx = np.searchsorted(self.uniq, nid).astype(np.int32)
+        gidx = np.searchsorted(uniq, nid).astype(np.int32)
         keep = eligible[gidx]
         self.kd_idx = gidx[keep]
         self.kd_lat = nodes.geometry.y.to_numpy()[keep]
         self.kd_lon = nodes.geometry.x.to_numpy()[keep]
-        self.kd = KDTree(np.column_stack([self.kd_lat, self.kd_lon]))
-        self.n_snap_nodes = int(keep.sum())
-
-        # --- 成分の名前（到達不能の説明用）。大きい順に 本土・北海道・沖縄、それ以外は離島
-        rank = np.argsort(sizes)[::-1]
-        self._component_name = {int(rank[0]): '本州・四国・九州', int(rank[1]): '北海道', int(rank[2]): '沖縄本島'}
 
         # --- /route 用: ノード対 → リンクの逆引き（並行リンクは複数返るので重みで選ぶ）
         self.link_dist = links['dist_m'].to_numpy().astype(np.int64)
         self.link_time = links['time_001min'].to_numpy().astype(np.int64)
-        pk = np.minimum(self.i1, self.i2).astype(np.int64) * self.n_nodes + np.maximum(self.i1, self.i2)
-        self._pk_order = np.argsort(pk, kind='stable')
-        self._pk_sorted = pk[self._pk_order]
+        self._pk_order = np.argsort(self._pair_keys(), kind='stable')
 
         # --- /route 用: 全リンクの座標を平坦な float32 で常駐（設計書 未確定① → 案(a) 採用）
         # geopandas で読むと 20 秒だが、row group ごとに shapely.from_wkb すれば 1.2 秒・145 MB。
         # 1 経路（約 8,000 本）の取り出しは 3 ms。float32 の丸めは約 1 m で表示用途には十分
-        self.coords, self.coord_offsets = _load_geometry(d / f'KSJ_N13-24_{case}_道路リンク.parquet')
+        self.coords, self.coord_offsets = _load_geometry(link_path)
+        self._source = _source_signature(d, case)
 
-        del links, nodes
-        self.load_seconds = time.perf_counter() - t0
+    # ------------------------------------------------------------------ 組み立て済みの保存・読み込み
+    def _arrays(self):
+        return {
+            'indices': self._indices, 'indptr': self._indptr,
+            'w_time_exp': self._w[('time', True)], 'w_time_noexp': self._w[('time', False)],
+            'w_dist_exp': self._w[('dist', True)], 'w_dist_noexp': self._w[('dist', False)],
+            'i1': self.i1, 'i2': self.i2, 'is_expressway': self.is_expressway,
+            'mask_trunk': self._mask_trunk, 'mask_major': self._mask_major, 'component': self.component,
+            'kd_idx': self.kd_idx, 'kd_lat': self.kd_lat, 'kd_lon': self.kd_lon,
+            'link_dist': self.link_dist, 'link_time': self.link_time, 'pk_order': self._pk_order,
+            'coords': self.coords, 'coord_offsets': self.coord_offsets,
+        }
 
-    def _weights(self, w_link):
+    def save(self, out_dir):
+        """組み立て済みグラフを .npy 群 ＋ meta.json で書き出す（preprocess/build_graph_arrays.py から呼ぶ）"""
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        for name, a in self._arrays().items():
+            np.save(out / f'{name}.npy', np.ascontiguousarray(a))
+        meta = {'format': PREBUILT_FORMAT, 'case': self.case, 'n_links': self.n_links, 'n_nodes': self.n_nodes,
+                'source': self._source}
+        (out / 'meta.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    @staticmethod
+    def _prebuilt_usable(pre, d, case):
+        """組み立て済みがあり、形式の版が合い、元の parquet が（手元にあれば）同じ大きさなら使う。
+        公開版のイメージには parquet を入れないので、parquet が無いときは組み立て済みを信じる"""
+        meta_path = pre / 'meta.json'
+        if not meta_path.exists():
+            return False
+        meta = json.loads(meta_path.read_text(encoding='utf-8'))
+        if meta.get('format') != PREBUILT_FORMAT:
+            return False
+        src = _source_signature(d, case)
+        return not src or src == meta.get('source')
+
+    def _load_prebuilt(self, pre):
+        meta = json.loads((pre / 'meta.json').read_text(encoding='utf-8'))
+        a = {name: np.load(pre / f'{name}.npy') for name in PREBUILT_ARRAYS}
+        self.n_links, self.n_nodes, self._source = meta['n_links'], meta['n_nodes'], meta['source']
+        self._indices, self._indptr = a['indices'], a['indptr']
+        self._w = {('time', True): a['w_time_exp'], ('time', False): a['w_time_noexp'],
+                   ('dist', True): a['w_dist_exp'], ('dist', False): a['w_dist_noexp']}
+        self.i1, self.i2, self.is_expressway = a['i1'], a['i2'], a['is_expressway']
+        self._mask_trunk, self._mask_major, self.component = a['mask_trunk'], a['mask_major'], a['component']
+        self.kd_idx, self.kd_lat, self.kd_lon = a['kd_idx'], a['kd_lat'], a['kd_lon']
+        self.link_dist, self.link_time, self._pk_order = a['link_dist'], a['link_time'], a['pk_order']
+        self.coords, self.coord_offsets = a['coords'], a['coord_offsets']
+
+    # ------------------------------------------------------------------ 組み立て・読み込みの共通の仕上げ
+    def _finish(self):
+        """どちらの経路でも同じ、安い後処理（CSR 行列・マスク・成分・KD 木・逆引き）"""
+        shape = (self.n_nodes, self.n_nodes)
+        self.graphs = {k: csr_matrix((w, self._indices, self._indptr), shape=shape) for k, w in self._w.items()}
+        self.G = self.graphs[('time', True)]      # 既定（後方互換）
+        self.class_mask = {'all': np.ones(self.n_links, dtype=bool),
+                           'trunk': self._mask_trunk, 'major': self._mask_major}
+
+        sizes = np.bincount(self.component)
+        self.n_components = len(sizes)
+        self.component_size = sizes[self.component]           # ノードごとの所属成分サイズ
+        # 成分の名前（到達不能の説明用）。大きい順に 本土・北海道・沖縄、それ以外は離島
+        rank = np.argsort(sizes)[::-1]
+        self._component_name = {int(rank[0]): '本州・四国・九州', int(rank[1]): '北海道', int(rank[2]): '沖縄本島'}
+
+        self.kd = KDTree(np.column_stack([self.kd_lat, self.kd_lon]))
+        self.n_snap_nodes = len(self.kd_idx)
+        self._pk_sorted = self._pair_keys()[self._pk_order]
+
+    def _pair_keys(self):
+        return np.minimum(self.i1, self.i2).astype(np.int64) * self.n_nodes + np.maximum(self.i1, self.i2)
+
+    @staticmethod
+    def _weights(w_link, starts, link_of_entry):
         """リンク重み → CSR エントリ重み（並行リンクは最小値に畳む）"""
-        return np.minimum.reduceat(w_link[self._link_of_entry], self._starts)
+        return np.minimum.reduceat(w_link[link_of_entry], starts)
 
     # ------------------------------------------------------------------ 探索
     def snap(self, lat, lon):
@@ -310,5 +408,5 @@ class RoadGraph:
         return {
             'links': self.n_links, 'nodes': self.n_nodes, 'snap_nodes': self.n_snap_nodes,
             'components': int(self.n_components), 'coordinates': int(len(self.coords)),
-            'load_seconds': round(self.load_seconds, 2),
+            'load_seconds': round(self.load_seconds, 2), 'graph_source': self.source,
         }
