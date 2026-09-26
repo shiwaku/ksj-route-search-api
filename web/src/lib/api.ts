@@ -25,8 +25,9 @@ export interface Reachability {
 	counts: Record<'all' | 'trunk' | 'major', number>;
 	count: number;
 	elapsed_ms: number;
-	link_ids: number[];
-	costs: number[];
+	// JSON では number[]、format=bin では型付き配列（Uint32Array / Float32Array）。読む側は添字と length だけ使う
+	link_ids: ArrayLike<number>;
+	costs: ArrayLike<number>;
 }
 
 export interface Route {
@@ -50,14 +51,39 @@ export class ApiError extends Error {
 	}
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+async function fetchOk(path: string, init?: RequestInit): Promise<Response> {
 	const res = await fetch(API + path, init);
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
 		const d = body.detail;
 		throw new ApiError(res.status, typeof d === 'string' ? d : JSON.stringify(d ?? res.statusText));
 	}
+	return res;
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+	const res = await fetchOk(path, init);
 	return res.status === 204 ? (undefined as T) : res.json();
+}
+
+// 到達圏のバイナリ形式（api/core.py の _binary_body・issue #5）。120 分で gzip 後 3.6 MB → 0.95 MB
+// [u32 ヘッダ長 H][ヘッダ JSON][link_id の差分 u32 × count][コスト u16 × count]（リトルエンディアン）
+function decodeReachability(buf: ArrayBuffer): Reachability {
+	const h = new DataView(buf).getUint32(0, true);
+	const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, h)));
+	const n: number = head.count;
+	const off = 4 + h; // ヘッダは 4 の倍数まで埋めてあるので Uint32Array をそのまま被せられる
+	const deltas = new Uint32Array(buf, off, n);
+	const q = new Uint16Array(buf, off + 4 * n, n);
+	const linkIds = new Uint32Array(n);
+	const costs = new Float32Array(n);
+	const unit: number = head.cost_unit;
+	for (let i = 0, id = 0; i < n; i++) {
+		id += deltas[i];
+		linkIds[i] = id;
+		costs[i] = q[i] * unit;
+	}
+	return { ...head, link_ids: linkIds, costs };
 }
 
 const q = (o: Record<string, string | number | boolean>) =>
@@ -65,8 +91,8 @@ const q = (o: Record<string, string | number | boolean>) =>
 
 export const api = {
 	health: () => call<Health>('/health'),
-	reachability: (p: { lat: number; lon: number; limit_min: number; use_expressway: boolean; road_class?: RoadClass }) =>
-		call<Reachability>('/reachability' + q({ road_class: 'auto', ...p })),
+	reachability: async (p: { lat: number; lon: number; limit_min: number; use_expressway: boolean; road_class?: RoadClass }) =>
+		decodeReachability(await (await fetchOk('/reachability' + q({ road_class: 'auto', ...p, format: 'bin' }))).arrayBuffer()),
 	route: (p: { from_lat: number; from_lon: number; to_lat: number; to_lon: number; use_expressway: boolean }) =>
 		call<Route>('/route' + q(p)),
 	bookmarks: {

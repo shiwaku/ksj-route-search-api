@@ -102,9 +102,11 @@ def reachability(
     cost: Literal['time', 'dist'] = 'time',
     road_class: Literal['auto', 'all', 'trunk', 'major'] = 'auto',
     use_expressway: bool = True,
+    format: Literal['json', 'bin'] = Query('json', description='bin は配列をバイナリで返す（画面用。形式は api/core.py の _binary_body）'),
 ):
     """到達圏。ジオメトリは返さず link_id とコストの並列配列を返す（クライアントは PMTiles に setFeatureState）"""
-    return reachability_response(lat, lon, limit_min, cost=cost, road_class=road_class, use_expressway=use_expressway)
+    return reachability_response(lat, lon, limit_min, cost=cost, road_class=road_class, use_expressway=use_expressway,
+                                 fmt=format)
 
 
 @app.get('/route')

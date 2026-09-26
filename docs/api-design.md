@@ -201,6 +201,7 @@ MapLibre の `setFeatureState` でタイル側のリンクに載せて着色す�
 | `cost` | `time`\|`dist` | | `time` | コストの種類 |
 | `road_class` | `auto`\|`all`\|`trunk`\|`major` | | **`auto`** | 返す道路種別。下表 |
 | `use_expressway` | bool | | `true` | `false` で高速道路（`N13_003=4`）を通行不可にする。結果からも高速リンクを除く |
+| `format` | `json`\|`bin` | | `json` | `bin` は配列をバイナリで返す（`application/octet-stream`・画面用・2026-09-26 追加・issue #5）。形式は下の「バイナリ形式」 |
 
 | `road_class` | 対象（`N13_003`） | 意味 |
 |---|---|---|
@@ -266,6 +267,20 @@ MapLibre の `setFeatureState` でタイル側のリンクに載せて着色す�
 | | 480 | 🔴 1,386,575 | 🟡 617,455 | 🟢 181,426 |
 
 **480 分は `major` なら全起点で 🟢**。上限は当初 480 だったが、2026-09-10 に実測して **1,920 分**に広げた: 東京駅起点は 1,200 分、鹿児島中央起点は 1,800 分で本州・四国・九州の全リンク 3,434,005 本に到達して以後増えない。道路網の直径（最も遠い 2 点）は佐多岬→大間崎 1,891 分・2,249 km。`major` は上限で 508,385 本（🟡・100 万本以内）、API 270〜280 ms。1,920 = 80 分刻み × 24 帯。北海道・沖縄は別の道路網なので届かない。
+
+
+#### バイナリ形式（`format=bin`）
+
+120 分（78.6 万本）の JSON は gzip 後 3.6 MB あり、公開版では転送に約 1 秒掛かっていた。`bin` では 0.95 MB になる。
+
+```
+[u32 ヘッダ長 H][ヘッダ JSON（H バイト。JSON 版の配列以外の項目 ＋ cost_unit・encoding。末尾は 4 の倍数まで空白）]
+[link_id の差分 u32 × count][コスト u16 × count]            ※ すべてリトルエンディアン
+```
+
+- `link_id` は昇順なので差分で持つ（先頭は 0 との差）。累積和で元に戻す
+- コスト = u16 × `cost_unit`。`cost=time` は 0.1 分、`cost=dist` は 10 m。**誤差は単位の半分まで**（JSON は 0.01 分）
+- 読み方は `web/src/lib/api.ts` の `decodeReachability`、書き方は `api/core.py` の `_binary_body`
 
 ### `GET /route`
 
