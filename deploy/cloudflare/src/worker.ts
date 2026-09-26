@@ -32,10 +32,10 @@ const json = (status: number, detail: string, headers: HeadersInit = {}) =>
   Response.json({ detail }, { status, headers });
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) return api(request, url, env);
-    if (url.pathname === TILE_PATH) return tiles(request, env);
+    if (url.pathname === TILE_PATH) return tiles(request, env, ctx);
     if (url.pathname.startsWith("/tiles/")) return new Response("Not found", { status: 404 });
     return env.ASSETS.fetch(request);
   },
@@ -59,7 +59,64 @@ async function api(request: Request, url: URL, env: Env): Promise<Response> {
   return getContainer(env.ROUTE_CONTAINER, "main").fetch(new Request(url, request));
 }
 
-async function tiles(request: Request, env: Env): Promise<Response> {
+// R2 から毎回読むと Range 1 回に約 0.2 秒掛かり、地図 1 画面で数十回読むので描画が遅い（issue #4）。
+// 読んだ範囲をこのデータセンターの Cache API に置き、2 回目以降はそこから返す。Cache API は無料。
+// cache.put は 206 を受け付けないので「URL＋範囲」をキーに 200 で保存し、返すときに 206 に戻す。
+// キーに TILE_KEY（版入り）を含めるので、データ更新でキーを変えれば古いキャッシュは読まれない
+const TILE_CACHE_SECONDS = 86400;
+// PMTiles のクライアントが読むのはディレクトリ（16 KB 程度）とタイル（上限 1.5 MB）。これより大きい範囲は置かない
+const TILE_CACHE_MAX_BYTES = 4 * 1024 * 1024;
+
+async function tiles(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const m = request.method === "GET" ? /^bytes=(\d+)-(\d+)$/.exec(request.headers.get("Range") ?? "") : null;
+  if (m && !request.headers.has("If-None-Match")) {
+    const start = Number(m[1]), end = Number(m[2]);
+    if (end >= start && end - start + 1 <= TILE_CACHE_MAX_BYTES) {
+      return cachedRange(request, env, ctx, start, end);
+    }
+  }
+  return tilesFromR2(request, env);
+}
+
+async function cachedRange(request: Request, env: Env, ctx: ExecutionContext, start: number, end: number): Promise<Response> {
+  const keyUrl = new URL(request.url);
+  keyUrl.pathname = `/__tile-cache/${TILE_KEY}`;
+  keyUrl.search = `?r=${start}-${end}`;
+  const key = new Request(keyUrl.toString());
+  const cache = caches.default;
+
+  const hit = await cache.match(key);
+  if (hit) {
+    const etag = hit.headers.get("ETag");
+    const ifMatch = request.headers.get("If-Match");
+    if (ifMatch && etag && ifMatch !== etag) return new Response(null, { status: 412 });
+    return rangeResponse(hit.body, hit.headers, "HIT");
+  }
+
+  const obj = await env.TILES.get(TILE_KEY, { range: { offset: start, length: end - start + 1 }, onlyIf: request.headers });
+  if (!obj) return new Response("Not found", { status: 404 });
+  const headers = tileHeaders(obj);
+  if (!("body" in obj)) return new Response(null, { status: 412, headers });
+  const last = Math.min(end, obj.size - 1);
+  headers.set("Content-Range", `bytes ${start}-${last}/${obj.size}`);
+  const buf = await obj.arrayBuffer();
+
+  const stored = new Headers(headers);
+  stored.set("Cache-Control", `public, max-age=${TILE_CACHE_SECONDS}`);
+  ctx.waitUntil(cache.put(key, new Response(buf, { status: 200, headers: stored })));
+  return rangeResponse(buf, headers, "MISS");
+}
+
+function rangeResponse(body: BodyInit | null, src: Headers, cacheStatus: "HIT" | "MISS"): Response {
+  const headers = new Headers(src);
+  // ブラウザ向けは R2 のオブジェクトと同じ 1 時間（キャッシュに置く側の 1 日とは別）
+  headers.set("Cache-Control", "public, max-age=3600");
+  headers.set("X-Tile-Cache", cacheStatus);
+  headers.delete("Content-Length");
+  return new Response(body, { status: 206, headers });
+}
+
+async function tilesFromR2(request: Request, env: Env): Promise<Response> {
   if (request.method === "HEAD") {
     const head = await env.TILES.head(TILE_KEY);
     if (!head) return new Response("Not found", { status: 404 });

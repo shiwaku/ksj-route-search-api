@@ -13,7 +13,7 @@
 | ファイル | 役割 |
 |---|---|
 | `wrangler.jsonc` | Assets / R2 / Rate Limiting / Container（`standard-1`・`max_instances: 1`）をまとめて定義 |
-| `src/worker.ts` | パスで振り分け。タイルのキーは `TILE_KEY`。`/api` は `/health` `/reachability` `/route` だけ通し、重い 2 本は IP ごとに 10 秒 20 回（大まかにしか効かない・下の落とし穴） |
+| `src/worker.ts` | パスで振り分け。タイルのキーは `TILE_KEY`。読んだ範囲は Cache API に置く（下の「タイルのキャッシュ」）。`/api` は `/health` `/reachability` `/route` だけ通し、重い 2 本は IP ごとに 10 秒 20 回（大まかにしか効かない・下の落とし穴） |
 | `Dockerfile` | ルートの Dockerfile ＋ グラフ parquet（380 MB）。`DATABASE_URL` を設定しない = ブックマークと `/bench` は無い |
 | `../../.dockerignore` | 許可リスト。wrangler は Dockerfile を標準入力で渡すので、Dockerfile ごとの ignore は効かない |
 | `../../web/static/.assetsignore` | 道路タイル（200 MB）を Assets から外す。Assets は 1 ファイル 25 MiB まで |
@@ -27,7 +27,8 @@
 | 到達圏 30 / 120 / 480 分 | 0.18 / 0.57 / 0.81 秒 | 0.98 / 1.47 / 1.78 秒（手元 → Cloudflare の往復込み） |
 | 経路 東京→横浜 / 東京→大阪 | 0.04 / 0.76 秒 | 0.29 / 1.24 秒（同上） |
 | 120 分を 30 本同時 | 落ちない（最後の 1 本は約 20 秒待ち） | 未計測 |
-| タイル（`/tiles/…`・Range） | — | 206・中身が元ファイルと一致 |
+| タイル（`/tiles/…`・Range 16 KB） | — | 206・中身が元ファイルと一致。R2 から 0.18〜0.29 秒、キャッシュから約 0.09 秒 |
+| 画面の初回表示（ブラウザのキャッシュなし・playwright） | — | Worker のキャッシュが空 4.7 秒 → 当たる 2.1 秒 |
 
 スリープ（10 分で `inactive` になるか・設計書 8 章 V6）は未確認。
 
@@ -94,6 +95,18 @@ curl https://ksj-route-search.shi-works-worker.workers.dev/api/health   # 寝て
 
 キーの付け替えは、バケットの規約と同じ「新しいキーに置く → 疎通確認 → 参照元を更新 → デプロイ確認 → 旧キーを削除」の順（R2-STRUCTURE.md §6.7）。
 ブラウザはタイルを最大 1 時間キャッシュする（`max-age=3600`）が、キーが変わると ETag も変わるので、PMTiles のクライアントは読み直す。
+Worker のキャッシュ（下）もキーに `TILE_KEY` を含むので、キーを変えれば古い版は読まれない（1 日で消える）。
+
+## タイルのキャッシュ
+
+R2 から毎回読むと Range 1 回に約 0.2 秒掛かり、地図 1 画面で十数〜数十回読むので描画が遅かった（issue #4）。
+Worker が読んだ範囲を Cache API（`caches.default`）に 1 日置き、2 回目以降はそこから返す。**Cache API は無料**で、R2 の読み取り回数も減る。
+
+- `cache.put` は 206 を受け付けないので、「`TILE_KEY`＋範囲」をキーに 200 で保存し、返すときに 206 と `Content-Range` を付け直す
+- キャッシュは**データセンター単位**（東京なら東京の利用者で共有）。そのデータセンターで最初にその範囲を読んだ人だけ R2 まで取りに行く
+- 当たったかは応答ヘッダ `X-Tile-Cache: HIT / MISS` で分かる（`curl -s -D - -o /dev/null -H 'Range: bytes=0-16383' <URL>/tiles/roads_nationwide.pmtiles`）
+- 4 MB を超える範囲、`Range` の無いリクエスト、`If-None-Match` 付きのリクエストはキャッシュを通さず R2 から返す
+- `workers.dev` のドメインでも効く（2026-09-26 実測）
 
 ## 運用
 
