@@ -14,7 +14,7 @@
 |---|---|
 | `wrangler.jsonc` | Assets / R2 / Rate Limiting / Container（`standard-1`・`max_instances: 1`）をまとめて定義 |
 | `src/worker.ts` | パスで振り分け。タイルのキーは `TILE_KEY`。読んだ範囲は Cache API に置く（下の「タイルのキャッシュ」）。`/api` は `/health` `/reachability` `/route` だけ通し、重い 2 本は IP ごとに 10 秒 20 回（大まかにしか効かない・下の落とし穴） |
-| `Dockerfile` | ルートの Dockerfile ＋ グラフ parquet（380 MB）。`DATABASE_URL` を設定しない = ブックマークと `/bench` は無い |
+| `Dockerfile` | ルートの Dockerfile ＋ 組み立て済みのグラフ（674 MiB・`preprocess/build_graph_arrays.py`）。parquet は入れない。`DATABASE_URL` を設定しない = ブックマークと `/bench` は無い |
 | `../../.dockerignore` | 許可リスト。wrangler は Dockerfile を標準入力で渡すので、Dockerfile ごとの ignore は効かない |
 | `../../web/static/.assetsignore` | 道路タイル（200 MB）を Assets から外す。Assets は 1 ファイル 25 MiB まで |
 
@@ -22,8 +22,8 @@
 
 | | ローカル Docker（`--memory=4g --cpus=0.5`） | **Cloudflare 実機**（standard-1・2026-09-26） |
 |---|---:|---:|
-| 起動（寝ている状態から `/api/health` が `ok` まで） | 34 秒（読み込み 28.4 秒） | **49 秒**（コンテナが応答するまで 6.4 秒・グラフ読み込み 43.9 秒） |
-| 常駐メモリ / 起動中のピーク | 2.35 / 3.16 GiB | — |
+| 起動（寝ている状態から `/api/health` が `ok` まで） | 34 秒（読み込み 28.4 秒）→ **6.4 秒**（読み込み 2.9 秒・組み立て済みのグラフ・#7） | 49 秒（応答開始 6.4 秒・読み込み 43.9 秒）→ 読み込み **9.8 秒**（#7）。寝ている状態からの合計は未計測 |
+| 常駐メモリ / 120 分を 30 本同時のピーク | 2.35 / 2.73 GiB → **1.02 / 1.34 GiB**（#7） | — |
 | 到達圏 30 / 120 / 480 分 | 0.18 / 0.57 / 0.81 秒 | 0.98 / 1.47 / 1.78 秒（手元 → Cloudflare の往復込み） |
 | 経路 東京→横浜 / 東京→大阪 | 0.04 / 0.76 秒 | 0.29 / 1.24 秒（同上） |
 | 120 分を 30 本同時 | 落ちない（最後の 1 本は約 20 秒待ち） | 未計測 |
@@ -66,7 +66,7 @@ aws s3 cp network/nationwide/roads_nationwide.pmtiles \
 
 ## デプロイ手順（初回・コードだけ直したとき）
 
-Docker Desktop が動いていること（wrangler がイメージをビルドする）。`network/nationwide/` に parquet 2 本と PMTiles があること（`preprocess/` で生成・git 管理外）。
+Docker Desktop が動いていること（wrangler がイメージをビルドする）。`network/nationwide/KSJ_N13-24_nationwide_graph/`（組み立て済みのグラフ）があること（`preprocess/build_graph_arrays.py` で生成・git 管理外）。
 
 ```bash
 cd deploy/cloudflare
@@ -85,10 +85,10 @@ curl https://ksj-route-search.shi-works-worker.workers.dev/api/health   # 寝て
 到達圏は `link_id`（parquet の行番号）でタイルの道路を塗るので、片方だけ新しいと色が別の道路に付く（`docs/api-design.md` 5 章）。
 同じキーに上書きすると、イメージのデプロイとタイルの上書きの間に必ずずれる時間ができるので、**新しい版は別のキーに置く**。
 
-1. `preprocess/` で parquet と PMTiles を作り直す（`network/nationwide/`）。ローカル（compose + `npm run dev`）で到達圏の色が道路に乗ることを確かめる
+1. `preprocess/` で parquet と PMTiles を作り直し、`build_graph_arrays.py` で組み立て済みのグラフも作り直す（`network/nationwide/`）。版名（`N13-24`）が変わるなら、`api/graph.py` の `KSJ_N13-24_…`、`Dockerfile` の `COPY` も合わせる。ローカル（compose + `npm run dev`）で到達圏の色が道路に乗ることを確かめる
 2. 新しい PMTiles を**新しい版のキー**にアップロードする（上の「R2 のデータ」。例: `roads_nationwide_N13-25.pmtiles`）。この時点では誰も読んでいない
 3. `src/worker.ts` の `TILE_KEY` を新しいキーに書き換える
-4. `npm run deploy`。新しい parquet を焼いたイメージと、新しい `TILE_KEY` の Worker が一緒に出る
+4. `npm run deploy`。新しいグラフを焼いたイメージと、新しい `TILE_KEY` の Worker が一緒に出る
 5. 画面で到達圏を出して、色が道路に乗っていることを確かめる。コンテナは入れ替わりで起動し直すので、最初の 1 回は約 50 秒待つ
 6. 問題なければ、古い版のキーを消す（`npx wrangler r2 object delete shi-works/pmtiles/ksj-route-search/roads_nationwide_<古い版>.pmtiles --remote`）。
    戻したくなったら、古いキーを消す前なら手順 3〜4 を古いキーでやり直せばよい

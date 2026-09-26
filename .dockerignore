@@ -1,9 +1,9 @@
 # 許可リスト。Dockerfile（compose 用）と deploy/cloudflare/Dockerfile（公開版）で共有する。
 # wrangler は Dockerfile を標準入力（-f -）で渡すので、Dockerfile ごとの ignore（<名前>.dockerignore）は効かない。
-# parquet（380 MB）は公開版がイメージに焼くために含める。compose 用は COPY しないので中身は変わらない
+# 組み立て済みのグラフ（674 MiB）は公開版がイメージに焼くために含める。compose 用は COPY しないので中身は変わらない
 *
 !pyproject.toml
 !uv.lock
 !api/
-!network/nationwide/*.parquet
+!network/nationwide/KSJ_*_graph/
 **/__pycache__
