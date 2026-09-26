@@ -23,8 +23,9 @@ ID をずらして回避すると router.py / export_for_pgrouting.py と 1 ず�
 **ずらさず記録に留める**。タイルに残る属性は `road_type` のみ。
 
 【使い方】
-  python3 make_pmtiles.py --case nationwide            # 全国 z6-13
+  python3 make_pmtiles.py --case nationwide            # 全国 z4-13
   python3 make_pmtiles.py --case 6441_drm --max-zoom 14
+  uv run python preprocess/make_pmtiles.py --case nationwide --wsl   # Windows: tippecanoe は WSL のものを使う
 """
 
 import argparse
@@ -51,6 +52,8 @@ ap.add_argument('--precision', type=int, default=6, help='座標の小数桁（6
 ap.add_argument('--no-zoom-filter', action='store_true',
                 help='ズーム別の道路種別フィルターを外す（デモ用「全道路」タイル。低ズームは密度で間引かれる）')
 ap.add_argument('--max-tile-bytes', type=int, default=1_500_000, help='タイル上限（既定 1.5 MB）')
+ap.add_argument('--wsl', action='store_true',
+                help='tippecanoe を WSL で動かす（Windows 用。出力先は /mnt/<ドライブ>/… に読み替える）')
 ap.add_argument('--no-feature-limit', action='store_true',
                 help='tippecanoe の 1 タイル 20 万フィーチャ上限を外す（z6-7 で道路の 5〜8 割が間引かれる原因）')
 a = ap.parse_args()
@@ -67,25 +70,36 @@ print(f'出力: {out}  z{a.min_zoom}-{a.max_zoom}', flush=True)
 # ズームごとに道路種別で出し分ける（2026-09-09）。
 # 全部を入れて --drop-densest-as-needed に任せると、z8 では市区町村道が「点々」にしか残らず、
 # 到達圏を塗っても粒に見える。表示側（web）の出し分けと同じ段階にする:
-#   z6-10: 高速・国道・都道府県道（road_type 1,3,5） / z11-: 全部
-#   （当初は z6-7 を高速・国道だけにしていたが、県道を z6 から入れても間引きが起きないか実測して決める）
+#   z5-8: 高速・国道（road_type 1,3） / z9-10: ＋都道府県道（5） / z11-: 全部
+# 【2026-09-26 変更（issue #17・案 D）】以前は z6-10 に県道まで入れていたが、z6-8 のタイルが展開後で最大 4.2 MB・
+# 圧縮後 1.3 MB あり、Mapbox Tiling Service の目安（レイヤー 2,500 KB・タイル 500 KB）を超えていた。
+# 広域の読み込み（z8 で 3.2 → 0.6 MB）と到達圏の描画（483 → 139 ms）も重かったので、県道は z9 からにした
 ZOOM_FILTER = json.dumps({a.layer: [
     'any',
     ['>=', '$zoom', 11],                                          # z11-: 全部
-    ['all', ['>=', '$zoom', 6], ['in', 'road_type', 1, 3, 5]],   # z6-10: 高速・国道・都道府県道
-    ['all', ['==', '$zoom', 5], ['in', 'road_type', 1, 3]],      # z5: 高速・国道（55.6 万本）
+    ['all', ['>=', '$zoom', 9], ['in', 'road_type', 1, 3, 5]],   # z9-10: 高速・国道・都道府県道
+    ['all', ['>=', '$zoom', 5], ['<=', '$zoom', 8], ['in', 'road_type', 1, 3]],   # z5-8: 高速・国道
     ['all', ['<=', '$zoom', 4], ['==', 'road_type', 1]],         # z4: 高速のみ（6.8 万本）。1,200 分の全国到達圏を z4-5 で見せるため
 ]})
 
+
+def to_wsl(path):
+    """C:\\Users\\… → /mnt/c/Users/…（--wsl のとき tippecanoe に渡す出力先）"""
+    p = Path(path).resolve()
+    return f'/mnt/{p.drive[0].lower()}' + p.as_posix()[len(p.drive):]
+
 cmd = [
-    'tippecanoe', '-o', str(out), '-l', a.layer,
+    # wsl -e はシェルを通さない。-e なしだと ZOOM_FILTER の $zoom がシェル変数として空に展開され、全部落ちて空のタイルになる
+    *(['wsl', '-e', 'tippecanoe', '-o', to_wsl(out)] if a.wsl else ['tippecanoe', '-o', str(out)]), '-l', a.layer,
     '-Z', str(a.min_zoom), '-z', str(a.max_zoom),
     '--use-attribute-for-id=link_id',      # link_id をフィーチャ ID に（setFeatureState 用）
     *([] if a.no_zoom_filter else ['-j', ZOOM_FILTER]),   # ズーム別の道路種別フィルター
     f'--maximum-tile-bytes={a.max_tile_bytes}',  # 既定 500 KB だと東京の z8 タイル 3 枚で県道が間引かれる（26〜78% 残し）
     '--drop-densest-as-needed',            # それでもタイル上限を超えたら間引く（保険）
     '--extend-zooms-if-still-dropping',
-    '--simplification=4',
+    # 低ズームは強めに簡略化し、座標の精度も落とす（-D 10 = 1 タイル 1,024 単位）。最大ズームは従来どおり（4・精度 12）。
+    # 見た目はほぼ変わらず、z7 の東京付近で展開後 15.9 → 11.5 MB（#17 案 B）
+    '--simplification=10', '--simplification-at-maximum-zoom=4', '-D', '10',
     *(['--no-feature-limit'] if a.no_feature_limit else []),
     '--force',
 ]

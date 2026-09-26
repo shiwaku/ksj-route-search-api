@@ -24,9 +24,10 @@ const API_PATHS = new Set(["/health", "/reachability", "/route"]);
 const LIMITED = new Set(["/reachability", "/route"]);
 const TILE_PATH = "/tiles/roads_nationwide.pmtiles";
 // 共有バケット shi-works のキー。第 1 階層はアクセス方法（pmtiles/）、第 2 階層はプロジェクト名
-// （xserver-cleanup の R2-STRUCTURE.md §4）。ファイル名の版（N13-24）はグラフ parquet と揃える。
+// （xserver-cleanup の R2-STRUCTURE.md §4）。ファイル名の版（N13-24）はグラフ parquet と揃え、
+// 同じデータでタイルの作り方だけ変えたら _v2, _v3 … を付ける（_v2: z5-8 を高速・国道だけにした・issue #17）。
 // データを更新するときは新しい版を別キーで置き、ここを書き換えてイメージと同時にデプロイする（README「データの更新」）
-const TILE_KEY = "pmtiles/ksj-route-search/roads_nationwide_N13-24.pmtiles";
+const TILE_KEY = "pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles";
 
 const json = (status: number, detail: string, headers: HeadersInit = {}) =>
   Response.json({ detail }, { status, headers });

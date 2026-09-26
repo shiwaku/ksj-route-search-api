@@ -93,7 +93,7 @@ pgRouting は比較のために計測し、選択の根拠として示す。
 | `export_for_pgrouting.py` | pgRouting 用 CSV 書き出し + scipy 側の正解算出 |
 | `ksj_to_network_csv.py` | 既存実装（`ksj-reachability-analysis` からのコピー・比較用） |
 | `build_graph_arrays.py` | リンク/ノード parquet → 組み立て済みの探索グラフ（`.npy` 群・674 MiB）。API の起動が parquet からの組み立て（1/2 vCPU 29 秒）から読むだけ（2.9 秒）になる。公開版のイメージにはこれを焼く |
-| `make_pmtiles.py` | リンク parquet → PMTiles。**全国 200 MB・1.5 分**（z6-13・ズーム別に道路種別を出し分け。`--no-zoom-filter` `--max-tile-bytes` あり） |
+| `make_pmtiles.py` | リンク parquet → PMTiles。**全国 146 MB**（z4-13・ズーム別に道路種別を出し分け: z5-8 高速・国道 / z9-10 ＋県道 / z11- 全部。低ズームは簡略化。タイル 1 枚は展開後 1.5 MB・圧縮後 0.4 MB 以下。`--wsl` で Windows から WSL の tippecanoe を使う。`--no-zoom-filter` `--max-tile-bytes` あり） |
 | `bench_scale.py` | 規模別ベンチ（scipy / NetworkX）。**入れ子6規模・同一始点** |
 | `bench_pgrouting_scale.py` | 規模別ベンチ（pgRouting）。ジオメトリなしで投入 |
 
@@ -116,7 +116,7 @@ uv run python preprocess/contract_network.py --case 6441_drm
 uv run python preprocess/router.py --case 6441_drm --limit 3000 --validate 10
 
 # 道路タイルを生成（全国 193 MB・1.5分）
-uv run python preprocess/make_pmtiles.py --case nationwide
+uv run python preprocess/make_pmtiles.py --case nationwide          # Windows では --wsl（WSL に tippecanoe が要る）
 
 # 探索グラフを組み立てて書き出す（全国 15 秒）。API はこれがあれば起動時に読むだけになる
 uv run python preprocess/build_graph_arrays.py --case nationwide
