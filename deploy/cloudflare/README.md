@@ -39,29 +39,29 @@
 
 | | |
 |---|---|
-| キー | `pmtiles/ksj-route-search/roads_nationwide_<版>.pmtiles`（今は `roads_nationwide_N13-24.pmtiles`） |
+| キー | `pmtiles/ksj-route-search/roads_nationwide_<版>.pmtiles`（今は `roads_nationwide_N13-24_v2.pmtiles`） |
 | 第 1 階層 `pmtiles/` | アクセス方法を表す（R2-STRUCTURE.md §4）。ルート直下に置かない |
 | 第 2 階層 `ksj-route-search/` | プロジェクト名 |
-| ファイル名の `<版>` | グラフ parquet（`KSJ_N13-24_…`）と揃える。**版ごとに別キー**にする（下の「データの更新」） |
+| ファイル名の `<版>` | グラフ parquet（`KSJ_N13-24_…`）と揃える。同じデータでタイルの作り方だけ変えたら `_v2`, `_v3` … を付ける（`_v2` は z5〜8 を高速・国道だけにした版・issue #17）。**版ごとに別キー**にする（下の「データの更新」） |
 | メタデータ | `content-type: application/octet-stream`、`cache-control: public, max-age=3600`（バケットの規約） |
 | 読む側 | Worker が R2 バインディング `TILES` で読み、`/tiles/roads_nationwide.pmtiles` として返す（同一オリジン）。キーは `src/worker.ts` の `TILE_KEY` |
-| 公開 URL | `https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24.pmtiles` でも読める（バケットの CORS 設定済み） |
+| 公開 URL | `https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles` でも読める（バケットの CORS 設定済み） |
 
 アップロード（どちらでもよい。リポジトリ直下で実行）:
 
 ```bash
 # wrangler（ログインは npx wrangler login）
-npx wrangler r2 object put shi-works/pmtiles/ksj-route-search/roads_nationwide_N13-24.pmtiles \
-  --file network/nationwide/roads_nationwide.pmtiles \
+npx wrangler r2 object put shi-works/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles \
+  --file network/nationwide/roads_nationwide_v2.pmtiles \
   --content-type application/octet-stream --cache-control "public, max-age=3600" --remote
 
 # aws CLI（バケットの規約に載っている手順。プロファイル r2-shiworks）
-aws s3 cp network/nationwide/roads_nationwide.pmtiles \
-  s3://shi-works/pmtiles/ksj-route-search/roads_nationwide_N13-24.pmtiles --profile r2-shiworks \
+aws s3 cp network/nationwide/roads_nationwide_v2.pmtiles \
+  s3://shi-works/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles --profile r2-shiworks \
   --content-type application/octet-stream --cache-control "public, max-age=3600" --only-show-errors
 ```
 
-確認: `curl -I https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24.pmtiles` が 200 で、`Content-Length` が元ファイルと同じ。
+確認: `curl -I https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles` が 200 で、`Content-Length` が元ファイルと同じ。
 **存在しないキーは Cloudflare の HTML の 404 になる**ので、ドメインの不具合と取り違えないこと（R2-STRUCTURE.md §6.6）。
 
 ## デプロイ手順（初回・コードだけ直したとき）

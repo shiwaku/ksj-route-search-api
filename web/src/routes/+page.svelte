@@ -64,7 +64,8 @@
 	const edgeLabel = (limit: number, i: number) => (bandCount(limit) <= 8 || (i + 1) % 3 === 0 ? String(bandEdges(limit)[i]) : '');
 	// 状態のあるリンクだけ描く。さらにズームが浅いほど太い道だけ（road_type 1=高速 3=国道 5=県道 7=市区町村道）。
 	// タイルは z13 まで間引かれるので、細い道は広域では「点々」にしか見えない → 出さない
-	// z<11 は高速・国道・都道府県道、z11 以上は全部（タイルの中身と同じ段階）
+	// タイルの中身は z5-8 が高速・国道、z9-10 が＋都道府県道、z11 以上が全部（make_pmtiles.py・issue #17）。
+	// ここでは z<11 を 1・3・5 に絞る（z5-8 はタイルに 5 が入っていないので、結果は高速・国道だけになる）
 	const reachOpacity: ExpressionSpecification = ['step', ['zoom'],
 		['case', ['all', ['!=', ['feature-state', 'cost'], null], ['in', ['get', 'road_type'], ['literal', [1, 3, 5]]]], 0.95, 0],
 		11, ['case', ['!=', ['feature-state', 'cost'], null], 0.95, 0]];
