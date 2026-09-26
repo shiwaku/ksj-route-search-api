@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ksj-route-search",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  // 画面（SvelteKit の adapter-static 出力）。/api と /tiles だけ Worker のコードを通し、他は Assets が直接返す。
+  // 道路タイル（200 MB）は 1 ファイル 25 MiB の上限を超えるので web/static/.assetsignore で外し、R2 から返す
+  "assets": {
+    "directory": "../../web/build",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/tiles/*"]
+  },
+
+  // 道路タイルは共有バケット shi-works（shi-works.com で公開中）の pmtiles/ksj-route-search/ に置く。
+  // キーは src/worker.ts の TILE_KEY、アップロードとデータ更新は README の手順
+  "r2_buckets": [{ "binding": "TILES", "bucket_name": "shi-works" }],
+
+  // 一般公開なので、重い探索（/reachability /route）を IP ごとに絞る。1 台しかないので連打で他の人が待たされる。
+  // 同じ IP の後ろに大勢いる（社内・会場の Wi-Fi）と共有になるので、人の操作では当たらない程度に緩めにしてある。
+  // ⚠️ 大まかにしか効かない（実機 2026-09-26）: period 60・limit 120 は 300 回連打しても 429 にならず、
+  // period 10・limit 10 は逐次 13 回目で 429。並列で投げると上限を超えても通ることがある。
+  // 落ちない保証はコンテナ側の同時計算 2 本（api/core.py）で持ち、これは歯止め程度に考える
+  "ratelimits": [
+    { "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 10 } }
+  ],
+
+  // FastAPI をそのままコンテナで動かす。グラフ parquet はイメージに焼き込み（deploy-cloudflare.md 4-2）
+  "containers": [
+    {
+      "class_name": "RouteContainer",
+      "image": "./Dockerfile",
+      "image_build_context": "../..",
+      // 1/2 vCPU・4 GiB・8 GB disk。常駐 2.2 GiB・起動ピーク 3.2 GiB（ローカル実測 2026-09-26）
+      "instance_type": "standard-1",
+      // グラフはメモリ上にあり、1 台で費用の上限を決める（deploy-cloudflare.md 7 章）
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "ROUTE_CONTAINER", "class_name": "RouteContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RouteContainer"] }]
+}

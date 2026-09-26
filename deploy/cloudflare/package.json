@@ -1,0 +1,17 @@
+{
+  "name": "ksj-route-search-deploy",
+  "private": true,
+  "scripts": {
+    "build:web": "npm --prefix ../../web run build",
+    "deploy": "npm run build:web && wrangler deploy",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260925.2",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.141.0"
+  }
+}

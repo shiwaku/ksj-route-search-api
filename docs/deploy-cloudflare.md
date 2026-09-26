@@ -4,7 +4,7 @@ Route Search API を Cloudflare Workers + Containers で公開する
 
 | | |
 |---|---|
-| 版 | 0.1（2026-09-25・案。実装・実機計測の前） |
+| 版 | 0.3（2026-09-26・デプロイ済み https://ksj-route-search.shi-works-worker.workers.dev ・V1〜V5 済み） |
 | 対象 | 探索系（`/health` `/reachability` `/route`）と画面。**DB（PostgreSQL / PostGIS）は持っていかない** |
 | お手本 | [shiwaku/npa-traffic-accident-analytics `deploy/cloudflare/`](https://github.com/shiwaku/npa-traffic-accident-analytics/tree/main/deploy/cloudflare)（2026-09-21 から同じ構成で運用中） |
 | 置き換える決定 | [`api-design.md` ADR-10「デプロイ: しない」](api-design.md#adr-10-デプロイしないローカルデモ) |
@@ -59,7 +59,7 @@ flowchart LR
 |---|---|---|---|
 | 受付 | **Worker** | パスで Assets / R2 / Container に振り分ける。数十行 | `deploy/cloudflare/src/worker.ts` |
 | 画面 | **Workers Static Assets** | `web/` を `adapter-static` で build した出力 | `web/build/`（wrangler.jsonc の `assets.directory` から参照） |
-| 道路タイル | **R2** | `roads_nationwide.pmtiles`（200 MB・1 ファイル） | バケットに `wrangler r2 object put` で置く（git 管理外） |
+| 道路タイル | **R2** | `roads_nationwide_N13-24.pmtiles`（200 MB・1 ファイル） | 共有バケット `shi-works` の `pmtiles/ksj-route-search/`（バケットのキー規約に従う。版ごとに別キー。手順は `deploy/cloudflare/README.md`） |
 | API | **Containers** | FastAPI（今の `Dockerfile` とほぼ同じ）＋グラフ parquet | `deploy/cloudflare/Dockerfile` |
 | 設定 | wrangler | 上 4 つをまとめて定義 | `deploy/cloudflare/wrangler.jsonc` |
 
@@ -86,7 +86,7 @@ flowchart LR
 
 | | 実測（ローカル・2026-09-25） | standard-1 | standard-2 |
 |---|---|---|---|
-| メモリ | 常駐 **3.15 GiB**（`docker stats`）・起動時の最大 RSS **3.42 GB**（`api-design.md` 1-3 追記・2026-09-16） | 4 GiB（余裕 0.6〜0.8 GiB） | 6 GiB |
+| メモリ | 常駐 **2.15 GiB**・起動中のピーク **3.16 GiB**（2026-09-26・PR #2 の `malloc_trim` 後。前は 3.14 / 3.59） | 4 GiB（余裕 0.8〜1.8 GiB） | 6 GiB |
 | CPU | 16 コアの PC で到達圏 480 分が 1.1 秒 | 1/2 vCPU | 1 vCPU |
 | 24 時間起動の費用 | — | 約 $0.92/日 | 約 $1.40/日 |
 
@@ -104,7 +104,7 @@ flowchart LR
 
 イメージは今の API イメージ 1.95 GB ＋ parquet 0.38 GB で約 2.3 GB。上限（= disk 8 GB）の内側。
 レイヤの順は「依存 → parquet → `api/`」にして、コードだけ直したときは小さいレイヤしか上がらないようにする。
-ルートの `.dockerignore` は `network` を除外しているので、`deploy/cloudflare/Dockerfile.dockerignore`（Dockerfile ごとの ignore）で許可リストを持つ。
+ルートの `.dockerignore` を許可リストにして parquet を含める（実装時に変更）。当初は Dockerfile ごとの ignore（`Dockerfile.dockerignore`）を置く案だったが、wrangler は Dockerfile を標準入力（`-f -`）で渡すのでそれが効かない。compose 用の Dockerfile は parquet を `COPY` しないので、そちらのイメージは変わらない。
 
 ### 4-3. 起動とスリープ
 
@@ -166,12 +166,26 @@ flowchart LR
 
 | # | 何を | どうやって | 合格の目安 |
 |---|---|---|---|
-| V1 | standard-1 でメモリが足りるか | `docker run --memory=4g --cpus=0.5` で起動し、`limit_min=480` を連打 | OOM で落ちない |
-| V2 | 1/2 vCPU での起動時間 | V1 の `/health` の `load_seconds` | 60 秒以内（超えたら画面に待ち時間を出す） |
-| V3 | 1/2 vCPU での探索時間 | 東京駅起点 30 / 120 / 480 分、東京→大阪の `/route` | 480 分で 3 秒以内 |
-| V4 | 実機のコールドスタート | お手本の `probe.py` の要領で、寝ている状態から `/api/health` が `ok` になるまで | 記録するだけ |
-| V5 | R2 経由のタイル | ブラウザの Network で `/tiles/*` が 206、パンが重くない | 206・目視で許容 |
+| V1 | standard-1 でメモリが足りるか | `docker run --memory=4g --cpus=0.5` で起動し、`limit_min=480` を連打 | OOM で落ちない → **合格**（下記） |
+| V2 | 1/2 vCPU での起動時間 | V1 の `/health` の `load_seconds` | 60 秒以内 → **28.4 秒**（parquet 焼き込みの公開版イメージ） |
+| V3 | 1/2 vCPU での探索時間 | 東京駅起点 30 / 120 / 480 分、東京→大阪の `/route` | 480 分で 3 秒以内 → **合格**（下記） |
+| V4 | 実機のコールドスタート | お手本の `probe.py` の要領で、寝ている状態から `/api/health` が `ok` になるまで | 記録するだけ → **49 秒**（応答開始 6.4 秒・グラフ読み込み 43.9 秒。ローカルより遅い） |
+| V5 | R2 経由のタイル | ブラウザの Network で `/tiles/*` が 206、パンが重くない | 206・目視で許容 → curl で 206・中身一致を確認。ブラウザの目視は未 |
 | V6 | スリープ | 10〜16 分後に `wrangler containers instances <ID>` の `STATE` が `inactive` | `inactive`（`LIVE INSTANCES` は寝ていても 1 のままなので使わない） |
+
+### V1〜V3 の結果（ローカル Docker・2026-09-26）
+
+最初の計測で **120 分 × 8 本同時に OOM** した（常駐 3.14 GiB に結果の配列が重なった）。一般公開で数十人が同時に使う想定なので、PR #2 で直してから測り直した。
+
+| | PR #2 前 | PR #2 後 |
+|---|---:|---:|
+| 到達圏 30 / 120 / 480 分 | 0.73 / 3.87 / 2.16 秒 | 0.18 / 0.57 / 0.81 秒 |
+| 経路 東京→横浜 / 東京→大阪 | 0.97 / 1.02 秒 | 0.04 / 0.76 秒 |
+| 常駐 / 起動中のピーク | 3.14 / 3.59 GiB | 2.15 / 3.16 GiB |
+| 120 分を同時に投げたとき | 8 本で OOM | 30 本でも落ちない（ピーク 2.73 GiB・最後の 1 本は約 20 秒待ち） |
+
+直したこと: 到達圏の配列を orjson で直接書き出す（120 分の 3.5 秒は探索ではなく JSON 化だった）、到達圏の同時計算を 2 本に制限、起動後の `malloc_trim`、経路探索に上限（打ち切りなしで毎回全国を探していた）。
+**standard-1 で足りる。** 待ちを減らしたくなったら standard-2（1 vCPU）。
 
 ---
 
@@ -211,8 +225,8 @@ flowchart LR
 
 | # | 項目 | 状況 |
 |---|---|---|
-| ① | **誰に公開するか** | 一般公開なら今の案のまま。自分・社内だけなら、お手本の `SECRET_PATH` 方式か Cloudflare Access を Worker の前に置く |
-| ② | 重いリクエストの制限 | 1 台なので、480 分の到達圏を連打されると他の人が待たされる。一般公開なら Workers の Rate Limiting バインディングを `/api/reachability` に付けるか検討 |
+| ① | ~~誰に公開するか~~ | **一般公開に決定**（2026-09-26）。認証は付けない |
+| ② | ~~重いリクエストの制限~~ | **決定**: コンテナ内で到達圏の同時計算を 2 本に制限（PR #2）＋ Worker の Rate Limiting で `/api/reachability` `/api/route` を IP ごとに 10 秒 20 回。会場や社内の Wi-Fi では同じ IP を大勢で共有するので緩めにした。**Rate Limiting は大まかにしか効かない**（実機で 60 秒 120 回は 300 回連打しても効かず、並列だと上限を超えて通る）ので歯止め程度。落ちない保証は同時計算の制限で持つ |
 | ③ | ドメイン | 当面は `*.shi-works-worker.workers.dev`。独自ドメインにするかは後で |
-| ④ | 起動中の画面表示 | V2・V4 の結果次第（4-3） |
-| ⑤ | standard-1 で足りるか | V1〜V3 の結果次第（4-1） |
+| ④ | 起動中の画面表示 | V4 が 49 秒で 1 分以内。画面は「API 起動中…（しばらく使われていないと 1 分ほど掛かります）」と出す（前は「約 5 秒」でローカル向けだった） |
+| ⑤ | ~~standard-1 で足りるか~~ | **足りる**（8 章 V1〜V3 の結果） |

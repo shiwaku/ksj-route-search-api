@@ -53,7 +53,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             state['db_error'] = repr(e)
     loop.run_in_executor(None, load)
-    loop.run_in_executor(None, init_db)
+    if db.DSN:
+        loop.run_in_executor(None, init_db)
     yield
 
 
@@ -63,8 +64,11 @@ app = FastAPI(title='Route Search API', version='0.4', lifespan=lifespan,
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=1)
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173'],
                    allow_methods=['*'], allow_headers=['*'])
-app.include_router(bookmarks_router)
-app.include_router(bench_router)
+# DB 系は DATABASE_URL があるときだけ。無ければルーターごと登録しない（404）。画面は /health の features で出し分ける
+FEATURES = ['bookmarks', 'bench'] if db.DSN else []
+if db.DSN:
+    app.include_router(bookmarks_router)
+    app.include_router(bench_router)
 
 
 @app.get('/health')
@@ -72,11 +76,14 @@ def health():
     g = state['graph']
     body = {'status': 'ok' if g else ('error' if state['error'] else 'loading'),
             'graph_loaded': g is not None,
-            'uptime_seconds': round(time.time() - state['started_at'], 1)}
+            'uptime_seconds': round(time.time() - state['started_at'], 1),
+            'features': FEATURES}
     if g:
         body.update(g.health())
     if state['error']:
         body['error'] = state['error']
+    if not db.DSN:      # DB なしでは接続を試みない（試みると connect_timeout=3 で毎回 3 秒待つ）
+        return body
     # DB は起動時の結果ではなく毎回つなぎ直して見る。起動時に落ちていて後から上がる（9/10 に踏んだ）と
     # /bookmarks は動くのに /health だけ error のまま、という食い違いが起きるため
     try:
