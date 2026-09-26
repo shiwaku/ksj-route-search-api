@@ -49,8 +49,10 @@ TIER_OK_MAX = 400_000           # 🟢 快適（ヒープ +225 MB・〜0.5 秒�
 # デモで「480 分・全道路 244 万本」を見せたいときだけ ROUTE_LINKS_HARD_MAX=5000000 で外す（ADR-4）
 LINKS_HARD_MAX = int(os.environ.get('ROUTE_LINKS_HARD_MAX', 1_000_000))
 # /route の探索上限の初期値 = 直線距離 km × これ ＋ 15 分（届かなければ倍にして ROUTE_LIMIT_TRIES 回まで試す）。
-# 東京→大阪は直線 400 km・379.6 分（0.95 分/km）。高速なしは一般道だけなので大きめに見る
-ROUTE_MIN_PER_KM = {True: 1.0, False: 1.6}
+# 小さいと 1 回目が空振りして探し直し（2 回分掛かる）、大きいと 1 回目の探索範囲が無駄に広がる。
+# 2026-09-26 実測: (所要 − 15 分) ÷ 直線 km の中央値は 高速あり 1.10・高速なし 2.26（90% 点 1.36・2.78）。
+# 同じ 60 組で係数ごとの合計時間を測り、最小になる値にした（高速あり 1.0 → 1.4 で −25%、高速なし 1.6 → 3.3 で −21%）
+ROUTE_MIN_PER_KM = {True: 1.4, False: 3.3}
 ROUTE_LIMIT_TRIES = 3
 
 # 組み立て済みグラフ（preprocess/build_graph_arrays.py が書き出す .npy 群）の形式の版。
