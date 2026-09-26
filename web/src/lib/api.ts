@@ -91,8 +91,12 @@ const q = (o: Record<string, string | number | boolean>) =>
 
 export const api = {
 	health: () => call<Health>('/health'),
-	reachability: async (p: { lat: number; lon: number; limit_min: number; use_expressway: boolean; road_class?: RoadClass }) =>
-		decodeReachability(await (await fetchOk('/reachability' + q({ road_class: 'auto', ...p, format: 'bin' }))).arrayBuffer()),
+	reachability: async (p: { lat: number; lon: number; limit_min: number; use_expressway: boolean; road_class?: RoadClass }) => {
+		const res = await fetchOk('/reachability' + q({ road_class: 'auto', ...p, format: 'bin' }));
+		// 公開版のデプロイ直後は、format を知らない古いコンテナが数分残って JSON を返す（2026-09-26 に約 2 分）。そのときは JSON として読む
+		if (res.headers.get('Content-Type')?.includes('json')) return (await res.json()) as Reachability;
+		return decodeReachability(await res.arrayBuffer());
+	},
 	route: (p: { from_lat: number; from_lon: number; to_lat: number; to_lon: number; use_expressway: boolean }) =>
 		call<Route>('/route' + q(p)),
 	bookmarks: {
