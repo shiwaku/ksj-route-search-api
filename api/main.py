@@ -9,6 +9,8 @@ Route Search API（FastAPI）— 全国道路ネットワークの到達圏分�
 """
 
 import asyncio
+import ctypes
+import gc
 import time
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -35,6 +37,13 @@ async def lifespan(app: FastAPI):
             state['graph'] = RoadGraph()
         except Exception as e:      # 起動失敗を /health で見えるようにする
             state['error'] = repr(e)
+        # 読み込み中の一時オブジェクト（文字列の node_id・WKB など）を解放しても glibc は OS に返さない。
+        # 返さないと常駐が 3.26 GB のまま、返すと 2.26 GB（standard-1 は 4 GiB・deploy-cloudflare.md 8 章）
+        gc.collect()
+        try:
+            ctypes.CDLL('libc.so.6').malloc_trim(0)
+        except OSError:             # glibc 以外（macOS でのローカル実行）では何もしない
+            pass
 
     def init_db():
         # DB が落ちていても探索系は動かす。/bookmarks が 503 を返し、/health に理由が出る

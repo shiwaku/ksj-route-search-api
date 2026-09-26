@@ -18,6 +18,7 @@ make_pmtiles.py と同じく、**行インデックスを link_id とする**約
 - 到達圏は road_class（all / trunk / major / auto）で絞り、上限は分ではなく **リンク 100 万本**
 """
 
+import math
 import os
 import time
 from pathlib import Path
@@ -48,6 +49,10 @@ TIER_OK_MAX = 400_000           # 🟢 快適（ヒープ +225 MB・〜0.5 秒�
 # 🔴 これを超える結果は返さない（ヒープ +560 MB・〜1.3 秒）。
 # デモで「480 分・全道路 244 万本」を見せたいときだけ ROUTE_LINKS_HARD_MAX=5000000 で外す（ADR-4）
 LINKS_HARD_MAX = int(os.environ.get('ROUTE_LINKS_HARD_MAX', 1_000_000))
+# /route の探索上限の初期値 = 直線距離 km × これ ＋ 15 分（届かなければ倍にして ROUTE_LIMIT_TRIES 回まで試す）。
+# 東京→大阪は直線 400 km・379.6 分（0.95 分/km）。高速なしは一般道だけなので大きめに見る
+ROUTE_MIN_PER_KM = {True: 1.0, False: 1.6}
+ROUTE_LIMIT_TRIES = 3
 
 
 class TooManyLinks(Exception):
@@ -251,8 +256,8 @@ class RoadGraph:
         snap={origin_m, dest_m}, unreachable_reason, elapsed_ms
         """
         t0 = time.perf_counter()
-        s, _, _, sm = self.snap(from_lat, from_lon)
-        t, _, _, tm = self.snap(to_lat, to_lon)
+        s, slat, slon, sm = self.snap(from_lat, from_lon)
+        t, tlat, tlon, tm = self.snap(to_lat, to_lon)
         base = {'snap': {'origin_m': sm, 'dest_m': tm}, 'link_ids': np.empty(0, dtype=np.int64),
                 'coordinates': None, 'summary': {'dist_m': 0, 'time_min': 0.0, 'link_count': 0}}
 
@@ -264,7 +269,17 @@ class RoadGraph:
         if self.component[s] != self.component[t]:
             return fail(f'始点と終点が別の道路網に属しています（{self.component_name(s)} / {self.component_name(t)}）')
         G = self.graphs[(cost, use_expressway)]
-        d, pred = dijkstra(G, directed=True, indices=s, return_predecessors=True)
+        # 打ち切りなしだと近くても全国（360 万ノード）を探し尽くし、1/2 vCPU で毎回 0.8 秒掛かる。
+        # 直線距離から上限を見積もり、届かなければ倍にして探し直す。上限内のノードの距離は正確なので、
+        # t に届いた時点の経路は打ち切りなしと同じ。最後は打ち切りなし（到達不能の判定もそこで行う）
+        km = math.dist((slat, slon * math.cos(math.radians((slat + tlat) / 2))),
+                       (tlat, tlon * math.cos(math.radians((slat + tlat) / 2)))) * 111
+        guess = (km * ROUTE_MIN_PER_KM[use_expressway] + 15) if cost == 'time' else (km * 1500 + 2000)
+        for limit in [guess * 2 ** k for k in range(ROUTE_LIMIT_TRIES)] + [np.inf]:
+            d, pred = dijkstra(G, directed=True, indices=s, return_predecessors=True,
+                               limit=limit / COST_SCALE[cost])
+            if np.isfinite(d[t]):
+                break
         if not np.isfinite(d[t]):
             return fail('高速道路を使わないと到達できません' if not use_expressway else '経路が見つかりません')
 

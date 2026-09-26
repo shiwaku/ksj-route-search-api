@@ -4,6 +4,8 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1
+# glibc はスレッドごとにメモリ領域（arena）を作り、解放しても手放さない。探索はスレッドプールで回るので絞る
+ENV MALLOC_ARENA_MAX=2
 
 # 依存だけ先に入れてレイヤをキャッシュ（api/ を変えても再インストールしない）
 COPY pyproject.toml uv.lock ./
