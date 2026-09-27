@@ -115,8 +115,11 @@
 		// タイル・glyph・sprite は地理院のサーバーから。到達圏などのレイヤは style.load 後に重ねる
 		map = new maplibregl.Map({
 			container: mapEl,
-			center: [139.767, 35.681],
-			zoom: 9,
+			// 既定は札幌駅（FOSS4G Hokkaido 2026 のデモ・#28）。北海道は本州と道路がつながらず到達圏が軽い。
+			// 塗る重さは打ち切りより「読み込み済みタイルの道路の数」で決まる。札幌のスマホ（CPU 4 倍遅い）で 120 分を塗ると
+			// z10 0.57 秒・z11 1.7 秒・z12 1.1 秒・z13 0.4 秒（2026-09-27）なので、PC・スマホとも z10。URL の #zoom/lat/lon があればそちらが優先
+			center: [141.3508, 43.0687],
+			zoom: 10,
 			hash: true, // URL に #zoom/lat/lon を持たせる（リロード・共有で同じ場所に戻れる）
 			style: '/styles/pale.json',
 			// スマホは出典を (i) に畳む。MapLibre の compact は最初は開いた状態なので、load で閉じる
