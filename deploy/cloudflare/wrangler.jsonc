@@ -23,13 +23,16 @@
   // キーは src/worker.ts の TILE_KEY、アップロードとデータ更新は README の手順
   "r2_buckets": [{ "binding": "TILES", "bucket_name": "shi-works" }],
 
-  // 一般公開なので、重い探索（/reachability /route）を IP ごとに絞る。1 台しかないので連打で他の人が待たされる。
-  // 同じ IP の後ろに大勢いる（社内・会場の Wi-Fi）と共有になるので、人の操作では当たらない程度に緩めにしてある。
+  // 一般公開なので、重い探索（/reachability /route）の回数を絞る。1 台しかないので連打で他の人が待たされる。
+  // API_LIMITER は端末ごと（IP＋画面が送る X-Client-Id）、IP_LIMITER は IP 全体。会場や社内の Wi-Fi は
+  // 大勢で 1 つの IP を共有するので、IP 全体の枠は数十人が触っても当たらない大きさにしてある（issue #25）。
+  // 人の操作は 1 タップ 1 回なので、1 人 10 秒 20 回・1 IP 10 秒 300 回（30 回/秒）はどちらも普通は当たらない。
   // ⚠️ 大まかにしか効かない（実機 2026-09-26）: period 60・limit 120 は 300 回連打しても 429 にならず、
   // period 10・limit 10 は逐次 13 回目で 429。並列で投げると上限を超えても通ることがある。
   // 落ちない保証はコンテナ側の同時計算 2 本（api/core.py）で持ち、これは歯止め程度に考える
   "ratelimits": [
-    { "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 10 } }
+    { "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 10 } },
+    { "name": "IP_LIMITER", "namespace_id": "1002", "simple": { "limit": 300, "period": 10 } }
   ],
 
   // FastAPI をそのままコンテナで動かす。グラフ parquet はイメージに焼き込み（deploy-cloudflare.md 4-2）

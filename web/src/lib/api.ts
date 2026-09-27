@@ -51,8 +51,26 @@ export class ApiError extends Error {
 	}
 }
 
+// ブラウザごとのランダム ID。公開版の Worker は回数制限を「IP＋この ID」で数える（issue #25）。
+// 会場の Wi-Fi のように大勢が 1 つの IP を共有しても、他の人の操作で 429 にならないようにするため。
+// 保存できない環境（プライベートウィンドウなど）でも、そのページを開いている間は同じ ID を使う
+const clientId = (() => {
+	const KEY = 'ksj-client-id';
+	try {
+		const saved = localStorage.getItem(KEY);
+		if (saved) return saved;
+	} catch {}
+	const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+	try {
+		localStorage.setItem(KEY, id);
+	} catch {}
+	return id;
+})();
+
 async function fetchOk(path: string, init?: RequestInit): Promise<Response> {
-	const res = await fetch(API + path, init);
+	const headers = new Headers(init?.headers);
+	headers.set('X-Client-Id', clientId);
+	const res = await fetch(API + path, { ...init, headers });
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
 		const d = body.detail;

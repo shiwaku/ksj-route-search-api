@@ -1,5 +1,5 @@
 // ブラウザ → この Worker → パスで振り分け（deploy-cloudflare.md 3 章）
-//   /api/*   → コンテナ（FastAPI）。/api を剥がして渡す。重い探索は IP ごとに回数制限
+//   /api/*   → コンテナ（FastAPI）。/api を剥がして渡す。重い探索は端末ごと・IP ごとに回数制限
 //   /tiles/* → R2 の PMTiles。Range をそのまま R2 に渡して 206 で返す
 //   それ以外 → Static Assets（wrangler.jsonc の run_worker_first に無いパスはここに来ない）
 import { Container, getContainer } from "@cloudflare/containers";
@@ -17,11 +17,15 @@ interface Env {
   TILES: R2Bucket;
   ASSETS: Fetcher;
   API_LIMITER: RateLimit;
+  IP_LIMITER: RateLimit;
 }
 
 // 公開するのは探索系だけ。/bookmarks /bench はコンテナ側でも登録されない（DATABASE_URL なし）
 const API_PATHS = new Set(["/health", "/reachability", "/route"]);
 const LIMITED = new Set(["/reachability", "/route"]);
+// 画面がブラウザごとに作るランダム ID（web/src/lib/api.ts の clientId）。会場の Wi-Fi のように大勢が 1 つの IP を
+// 共有しても、端末ごとに数えられるようにする（issue #25）。形の合わないものは「ID なし」として同じ枠で数える
+const CLIENT_ID = /^[A-Za-z0-9-]{8,64}$/;
 const TILE_PATH = "/tiles/roads_nationwide.pmtiles";
 // 共有バケット shi-works のキー。第 1 階層はアクセス方法（pmtiles/）、第 2 階層はプロジェクト名
 // （xserver-cleanup の R2-STRUCTURE.md §4）。ファイル名の版（N13-24）はグラフ parquet と揃え、
@@ -49,10 +53,12 @@ async function api(request: Request, url: URL, env: Env): Promise<Response> {
   const path = url.pathname.slice("/api".length);
   if (!API_PATHS.has(path)) return json(404, "Not Found");
   if (LIMITED.has(path)) {
-    const key = request.headers.get("CF-Connecting-IP") ?? "unknown";
-    const { success } = await env.API_LIMITER.limit({ key });
-    if (!success) {
-      return json(429, "リクエストが多すぎます。1 分ほど待ってからもう一度お試しください", { "Retry-After": "60" });
+    // 端末ごと（IP＋ID）の枠で連打を止め、ID を毎回変えて投げる相手は IP 全体の枠で止める
+    const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+    const id = request.headers.get("X-Client-Id") ?? "";
+    const client = `${ip}|${CLIENT_ID.test(id) ? id : "-"}`;
+    if (!(await env.API_LIMITER.limit({ key: client })).success || !(await env.IP_LIMITER.limit({ key: ip })).success) {
+      return json(429, "リクエストが多すぎます。10 秒ほど待ってからもう一度お試しください", { "Retry-After": "10" });
     }
   }
   url.pathname = path;

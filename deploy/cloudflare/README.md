@@ -13,7 +13,7 @@
 | ファイル | 役割 |
 |---|---|
 | `wrangler.jsonc` | Assets / R2 / Rate Limiting / Container（`standard-1`・`max_instances: 1`）をまとめて定義 |
-| `src/worker.ts` | パスで振り分け。タイルのキーは `TILE_KEY`。読んだ範囲は Cache API に置く（下の「タイルのキャッシュ」）。`/api` は `/health` `/reachability` `/route` だけ通し、重い 2 本は IP ごとに 10 秒 20 回（大まかにしか効かない・下の落とし穴） |
+| `src/worker.ts` | パスで振り分け。タイルのキーは `TILE_KEY`。読んだ範囲は Cache API に置く（下の「タイルのキャッシュ」）。`/api` は `/health` `/reachability` `/route` だけ通し、重い 2 本は端末ごと（IP＋画面が送る `X-Client-Id`）に 10 秒 20 回・IP 全体で 10 秒 300 回（大まかにしか効かない・下の落とし穴） |
 | `Dockerfile` | ルートの Dockerfile ＋ 組み立て済みのグラフ（674 MiB・`preprocess/build_graph_arrays.py`）。parquet は入れない。`DATABASE_URL` を設定しない = ブックマークと `/bench` は無い |
 | `../../.dockerignore` | 許可リスト。wrangler は Dockerfile を標準入力で渡すので、Dockerfile ごとの ignore は効かない |
 | `../../web/static/.assetsignore` | 道路タイル（200 MB）を Assets から外す。Assets は 1 ファイル 25 MiB まで |
@@ -112,7 +112,7 @@ Worker が読んだ範囲を Cache API（`caches.default`）に 1 日置き、2 
 
 - **スリープ**: 最後のリクエストから 10 分で寝る（`sleepAfter`）。寝ている間は課金されない。稼働中かどうかは `npx wrangler containers list` で ID を調べ、`npx wrangler containers instances <ID>` の `STATE` を見る（`LIVE INSTANCES` は寝ていても 1 のままで使えない。お手本の README）
 - **ログ**: `npx wrangler tail`、または Cloudflare ダッシュボードの Workers → ksj-route-search → Logs（`observability` 有効）
-- **回数制限に当たる**（画面に `429: リクエストが多すぎます`）なら `wrangler.jsonc` の `ratelimits[0].simple.limit` を上げて `npx wrangler deploy`（`period` は 10 か 60 のみ）
+- **回数制限に当たる**（画面に `429: リクエストが多すぎます`）なら `wrangler.jsonc` の `ratelimits` の `limit` を上げて `npx wrangler deploy`（`period` は 10 か 60 のみ）。1 人の連打なら `API_LIMITER`（端末ごと）、同じ Wi-Fi の大勢なら `IP_LIMITER`（IP 全体）
 - **費用の上限**は standard-1 を 24 時間起動し続けて約 $32/月（`max_instances: 1`）。設計書 7 章
 
 ## 分かっている落とし穴
