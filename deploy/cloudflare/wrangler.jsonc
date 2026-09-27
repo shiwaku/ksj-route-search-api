@@ -7,7 +7,7 @@
 
   // 公開の一時停止は false にして npx wrangler deploy（Worker・コンテナのイメージ・R2 のタイルは残るので、true に戻せば同じ URL で再開）。
   // 2026-09-27 に一度止めて同日に再開した。止めている間はリクエストが来ないのでコンテナも起きない
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
 
   // 画面（SvelteKit の adapter-static 出力）。/api と /tiles だけ Worker のコードを通し、他は Assets が直接返す。
