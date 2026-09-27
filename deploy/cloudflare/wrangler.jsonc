@@ -5,6 +5,11 @@
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
 
+  // 公開の一時停止（2026-09-27〜）: workers.dev の URL を無効にする。Worker・コンテナのイメージ・R2 のタイルは残るので、
+  // true に戻して npx wrangler deploy すれば同じ URL で再開できる。止めている間はリクエストが来ないのでコンテナも起きない
+  "workers_dev": false,
+  "preview_urls": false,
+
   // 画面（SvelteKit の adapter-static 出力）。/api と /tiles だけ Worker のコードを通し、他は Assets が直接返す。
   // 道路タイル（200 MB）は 1 ファイル 25 MiB の上限を超えるので web/static/.assetsignore で外し、R2 から返す
   "assets": {
