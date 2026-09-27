@@ -5,6 +5,8 @@ SvelteKit / FastAPI / PostgreSQL の3層構成。
 
 **公開版: https://ksj-route-search.shi-works-worker.workers.dev**（DB なし。しばらく使われないとスリープし、寝ている状態からは使えるまで 20 秒ほどかかる）
 
+> **公開を一時停止中**（`deploy/cloudflare/wrangler.jsonc` の `workers_dev: false`）。再開は `true` に戻して `npx wrangler deploy`
+
 埼玉県版・2層構成の [shiwaku/ksj-route-search-api-legacy](https://github.com/shiwaku/ksj-route-search-api-legacy) を土台に、
 全国規模へ拡張し3層アーキテクチャへ作り替えたもの。
 
