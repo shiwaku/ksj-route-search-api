@@ -5,8 +5,6 @@ SvelteKit / FastAPI / PostgreSQL の3層構成。
 
 **公開版: https://ksj-route-search.shi-works-worker.workers.dev**（DB なし。しばらく使われないとスリープし、寝ている状態からは使えるまで 20 秒ほどかかる）
 
-> **2026-09-27 から公開を一時停止中**（`deploy/cloudflare/wrangler.jsonc` の `workers_dev: false`）。再開は `true` に戻して `npx wrangler deploy`
-
 埼玉県版・2層構成の [shiwaku/ksj-route-search-api-legacy](https://github.com/shiwaku/ksj-route-search-api-legacy) を土台に、
 全国規模へ拡張し3層アーキテクチャへ作り替えたもの。
 
@@ -200,7 +198,7 @@ curl 'localhost:8000/bench?limit_min=30&bbox=true'   # エッジを bbox で絞�
 
 ## 一般公開（Cloudflare）
 
-公開 URL: https://ksj-route-search.shi-works-worker.workers.dev（2026-09-27 から一時停止中）
+公開 URL: https://ksj-route-search.shi-works-worker.workers.dev（一時停止は `wrangler.jsonc` の `workers_dev: false` でデプロイ）
 
 Cloudflare Workers + Containers で公開する（DB なし。ブックマークと `/bench` は出ない）。設計は [`docs/deploy-cloudflare.md`](docs/deploy-cloudflare.md)、手順は [`deploy/cloudflare/README.md`](deploy/cloudflare/README.md)。
 画面の API は本番もローカルも同一オリジンの `/api`（ローカルは Vite の proxy が `/api` を剥がして `localhost:8000` に渡す）。
