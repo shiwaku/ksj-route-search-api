@@ -26,7 +26,8 @@
 	let dest = $state<LatLon | null>(null);
 	let reach = $state<Reachability | null>(null);
 	let route = $state<Route | null>(null);
-	let paintMs = $state(0);
+	let paintMs = $state(0); // 最初の色（1 束目）が付くまで
+	let paintAllMs = $state(0); // 市区町村道まで塗り終わるまで
 	let bookmarks = $state<Bookmark[]>([]);
 	let bmName = $state('');
 	let bmError = $state<string | null>(null);
@@ -168,8 +169,9 @@
 	function clearReach() {
 		map?.removeFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER });
 		reach = null;
-		reachCost = null;
+		reachIds = null;
 		painted.clear();
+		clearQueue();
 	}
 	function clearRoute() {
 		(map?.getSource('route') as maplibregl.GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: [] });
@@ -181,38 +183,86 @@
 	// MapLibre は setFeatureState のたびに、読み込み済みタイル 1 枚ごとに変更した ID を全部照合する（タイル枚数 × 本数）。
 	// 120 分の 78.6 万本を一度に塗ると 1 フレームで 1.8〜2 秒止まっていた。見えている分（z13 で約 2 万本）だけなら 0.2 秒。
 	// 地図を動かして新しいタイルが来たら、その分を塗り足す（onTileData）
-	// Map は maplibre-gl の型名と衝突する（import type { Map }）ので globalThis.Map と書く
-	let reachCost: globalThis.Map<number, number> | null = null; // link_id → コスト（到達したリンク全部）
-	const painted = new Set<number>(); // 塗り済みの link_id
+	// 塗る重さは本数に比例する（updatePaintArrays がタイルごとに変更 ID を読み直す）。スマホ（CPU 4 倍遅い）では
+	// 札幌 z11 の 4.3 万本で 1.2 秒、東京 z11 の 12 万本で 2 秒以上、1 フレームが止まっていた。
+	// 1 フレーム CHUNK 本ずつに分け、太い道（高速・国道・県道）から先に塗る。z11〜12 は本数の 8 割以上が市区町村道（#31）
+	// 到達したリンク全部（link_id は昇順・API がその順で返す）。Map にすると 78.6 万本でスマホ相当 0.34 秒かかるので、二分探索で引く
+	let reachIds: ArrayLike<number> | null = null;
+	let reachCosts: ArrayLike<number> = [];
+	function reachIndex(id: number) {
+		const a = reachIds!;
+		let lo = 0, hi = a.length - 1;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1, v = a[mid];
+			if (v === id) return mid;
+			if (v < id) lo = mid + 1; else hi = mid - 1;
+		}
+		return -1;
+	}
+	const painted = new Set<number>(); // 塗り済み（または塗り待ちに積んだ）link_id
+	const MAJOR_ROADS = new Set([1, 3, 5]); // road_type: 1=高速 3=国道 5=県道（7=市区町村道）
+	const CHUNK = 4000; // 1 フレームで塗る本数。スマホ相当で 1 フレーム約 0.1 秒
+	let queue: number[] = []; // 塗り待ち（reachIds の添字・太い道が先）
+	let queueHead = 0;
+	let queueFrame = 0;
+	let queueDone: (() => void)[] = []; // 塗り待ちが空になったら呼ぶ
+
+	const setCost = (i: number) =>
+		map!.setFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER, id: reachIds![i] }, { cost: reachCosts[i] });
 
 	function paintLoaded() {
-		if (!reachCost || !map) return;
+		if (!reachIds || !map) return;
+		const minor: number[] = [];
 		for (const f of map.querySourceFeatures(SOURCE, { sourceLayer: SOURCE_LAYER })) {
 			const id = f.id as number;
 			if (painted.has(id)) continue;
 			painted.add(id);
-			const c = reachCost.get(id);
-			if (c !== undefined) map.setFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER, id }, { cost: c });
+			const i = reachIndex(id);
+			if (i < 0) continue;
+			if (MAJOR_ROADS.has(f.properties.road_type)) queue.push(i);
+			else minor.push(i);
 		}
+		for (const i of minor) queue.push(i);
+		if (queueHead < queue.length && !queueFrame) drainQueue(); // 最初の 1 束はすぐ塗る
 	}
+
+	function drainQueue() {
+		queueFrame = 0;
+		const end = Math.min(queue.length, queueHead + CHUNK);
+		for (; queueHead < end; queueHead++) setCost(queue[queueHead]);
+		if (queueHead < queue.length) queueFrame = requestAnimationFrame(drainQueue);
+		else clearQueue();
+	}
+
+	function clearQueue() {
+		cancelAnimationFrame(queueFrame);
+		queueFrame = 0; queue = []; queueHead = 0;
+		for (const f of queueDone.splice(0)) f();
+	}
+	const queueDrained = () => new Promise<void>((r) => (queueFrame ? queueDone.push(r) : r()));
 
 	// タイルが届くたびに呼ばれる。まとめて届くので 1 フレームに 1 回だけ塗り足す
 	let tileFrame = 0;
 	function onTileData(e: maplibregl.MapSourceDataEvent) {
-		if (e.sourceId !== SOURCE || !e.tile || !reachCost || tileFrame) return;
+		if (e.sourceId !== SOURCE || !e.tile || !reachIds || tileFrame) return;
 		tileFrame = requestAnimationFrame(() => { tileFrame = 0; paintLoaded(); });
 	}
 
+	// 最初の 1 束が描かれたら戻る（「計算中」を消して次の操作を受け付ける）。市区町村道の塗り足しは裏で続け、終わったら paintAllMs を記録
+	let paintGen = 0;
 	async function paint(r: Reachability) {
+		const gen = ++paintGen;
 		const t0 = performance.now();
 		map!.removeFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER });
 		painted.clear();
-		const { link_ids, costs } = r;
-		reachCost = new globalThis.Map();
-		for (let i = 0; i < link_ids.length; i++) reachCost.set(link_ids[i], costs[i]);
+		clearQueue();
+		reachIds = r.link_ids;
+		reachCosts = r.costs;
 		paintLoaded();
-		await idle();
+		await new Promise<void>((r) => map!.once('render', () => r())); // 最初の 1 束が描かれるまで
 		paintMs = Math.round(performance.now() - t0);
+		paintAllMs = 0;
+		queueDrained().then(idle).then(() => { if (gen === paintGen) paintAllMs = Math.round(performance.now() - t0); });
 	}
 
 	async function runReach(p: LatLon) {
@@ -388,7 +438,7 @@
 				<dd>{reach.road_class_applied === 'all' ? '全部' : reach.road_class_applied === 'trunk' ? '高速＋国道＋県道' : '高速＋国道'}
 					{#if reach.road_class_applied !== 'all'}<span class="text-amber-700">（広域のため幹線のみ）</span>{/if}</dd>
 				<dt class="text-gray-500">スナップ</dt><dd class="font-mono">{Math.round(reach.snap.dist_m)} m</dd>
-				<dt class="text-gray-500">API / 描画</dt><dd class="font-mono">{Math.round(reach.elapsed_ms)} ms / {paintMs} ms</dd>
+				<dt class="text-gray-500">API / 描画</dt><dd class="font-mono">{Math.round(reach.elapsed_ms)} ms / {paintMs} ms{#if paintAllMs > paintMs}<span class="text-gray-500">（全部 {paintAllMs} ms）</span>{/if}</dd>
 				{#if reach.tier === 'heavy'}<dd class="col-span-2 text-amber-700">⚠ 40 万本超。低スペック端末では重い</dd>{/if}
 			</dl>
 		{/if}
