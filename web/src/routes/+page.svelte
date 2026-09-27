@@ -31,6 +31,9 @@
 	let bmName = $state('');
 	let bmError = $state<string | null>(null);
 	let overlayReady = $state(false);
+	// パネルの開閉。スマホ幅（< 640px = Tailwind の sm 未満）では地図をタップしたら自動で畳み、地図を広く見せる
+	let panelOpen = $state(true);
+	const narrow = () => matchMedia('(max-width: 639px)').matches;
 
 	const ready = $derived((health?.graph_loaded ?? false) && overlayReady);
 	const hasBookmarks = $derived(health?.features?.includes('bookmarks') ?? false); // DB なし（公開版）では出さない
@@ -115,12 +118,15 @@
 			center: [139.767, 35.681],
 			zoom: 9,
 			hash: true, // URL に #zoom/lat/lon を持たせる（リロード・共有で同じ場所に戻れる）
-			style: '/styles/pale.json'
+			style: '/styles/pale.json',
+			// スマホは出典を (i) に畳む。MapLibre の compact は最初は開いた状態なので、load で閉じる
+			attributionControl: narrow() ? { compact: true } : {}
 		});
 		map.on('load', addOverlay);
+		if (narrow()) map.once('load', () => mapEl.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'));
 		map.on('sourcedata', onTileData);
 		if (import.meta.env.DEV) (window as unknown as { __map: Map }).__map = map; // 開発時のみ: Playwright から計測するため
-		map.addControl(new maplibregl.NavigationControl(), 'top-right');
+		map.addControl(new maplibregl.NavigationControl(), narrow() ? 'bottom-right' : 'top-right'); // スマホはパネルと重ならないよう右下
 		map.addControl(new maplibregl.ScaleControl());
 		map.on('click', onClick);
 
@@ -235,6 +241,7 @@
 	function onClick(e: MapMouseEvent) {
 		if (!ready || busy) return;
 		const p = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+		if (narrow()) panelOpen = false;
 		if (mode === 'reach') {
 			origin = p; setPoints(); runReach(p);
 		} else if (!origin || dest) {
@@ -286,14 +293,32 @@
 	}
 
 	const fmt = (n: number) => n.toLocaleString();
+	// 所要時間: 1 時間未満は「30 分」。先に分へ丸める（端数の丸めで「1 時間 60 分」にならないように）
+	const hm = (min: number) => { const m = Math.round(min); return m < 60 ? `${m} 分` : `${Math.floor(m / 60)} 時間 ${m % 60} 分`; };
+
+	// 畳んだときに見出しの下に出す 1 行
+	const summary = $derived.by(() => {
+		if (busy) return '計算中…';
+		if (error) return error;
+		if (mode === 'reach') return reach ? `${limitMin} 分・${fmt(reach.count)} 本` : `到達圏・${limitMin} 分 — 地図をタップ`;
+		if (route?.geometry) return `${(route.summary.dist_m / 1000).toFixed(1)} km・${hm(route.summary.time_min)}`;
+		return origin ? '終点をタップ' : '経路探索 — 起点をタップ';
+	});
 </script>
 
-<div class="relative h-screen w-screen">
+<div class="relative h-dvh w-screen">
 	<div bind:this={mapEl} class="h-full w-full"></div>
 
-	<aside class="absolute top-3 left-3 flex max-h-[calc(100vh-1.5rem)] w-80 flex-col gap-3 overflow-y-auto rounded-lg bg-white/95 p-4 text-sm shadow-lg">
-		<header>
+	<!-- スマホは上部に横いっぱい、sm 以上は左上に幅 320px -->
+	<aside class="absolute top-2 right-2 left-2 flex max-h-[70dvh] flex-col gap-3 overflow-y-auto rounded-lg bg-white/95 p-3 text-sm shadow-lg sm:top-3 sm:right-auto sm:left-3 sm:max-h-[calc(100dvh-1.5rem)] sm:w-80 sm:p-4">
+		<header class="flex items-start gap-2">
+			<div class="min-w-0 flex-1">
 			<h1 class="text-base font-bold">到達圏・経路探索</h1>
+			{#if !panelOpen}
+				<p class="mt-0.5 truncate text-xs {error ? 'text-red-700' : busy ? 'animate-pulse text-amber-700' : 'text-gray-600'}">
+					<span class={ready ? 'text-green-700' : 'text-amber-600'}>●</span> {summary}
+				</p>
+			{:else}
 			<p class="mt-1 text-xs text-gray-600">
 				{#if ready}
 					<span class="text-green-700">● API 準備完了</span> — {fmt(health!.links!)} リンク / 起動 {health!.load_seconds}s
@@ -303,7 +328,16 @@
 					<span class="animate-pulse text-amber-600">● API 起動中…（しばらく使われていないと 1 分ほど掛かります）</span>
 				{/if}
 			</p>
+			{/if}
+			</div>
+			<button class="-m-1 shrink-0 rounded p-2 text-gray-500 hover:bg-gray-100" onclick={() => (panelOpen = !panelOpen)}
+				aria-expanded={panelOpen} aria-controls="panel-body" title={panelOpen ? 'パネルを畳む' : 'パネルを開く'}>
+				<svg viewBox="0 0 20 20" class="h-4 w-4 transition-transform {panelOpen ? '' : 'rotate-180'}" fill="currentColor" aria-hidden="true"><path d="M5.3 12.7a1 1 0 0 1 0-1.4l4-4a1 1 0 0 1 1.4 0l4 4a1 1 0 0 1-1.4 1.4L10 9.4l-3.3 3.3a1 1 0 0 1-1.4 0z"/></svg>
+			</button>
 		</header>
+
+		{#if panelOpen}
+		<div id="panel-body" class="flex flex-col gap-3">
 
 		<div class="flex rounded border border-gray-300 text-center">
 			<button class="flex-1 py-1 {mode === 'reach' ? 'bg-[#0060df] text-white' : ''}" onclick={() => switchMode('reach')}>到達圏</button>
@@ -360,7 +394,7 @@
 			<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded bg-gray-50 p-2 text-xs">
 				{#if route.geometry}
 					<dt class="text-gray-500">距離</dt><dd class="font-mono">{(route.summary.dist_m / 1000).toFixed(1)} km</dd>
-					<dt class="text-gray-500">所要</dt><dd class="font-mono">{Math.floor(route.summary.time_min / 60)} 時間 {Math.round(route.summary.time_min % 60)} 分</dd>
+					<dt class="text-gray-500">所要</dt><dd class="font-mono">{hm(route.summary.time_min)}</dd>
 					<dt class="text-gray-500">リンク</dt><dd class="font-mono">{fmt(route.summary.link_count)} 本</dd>
 					<dt class="text-gray-500">API</dt><dd class="font-mono">{Math.round(route.elapsed_ms)} ms</dd>
 				{:else}
@@ -390,6 +424,8 @@
 				{/each}
 			</ul>
 		</section>
+		{/if}
+		</div>
 		{/if}
 	</aside>
 </div>
