@@ -70,14 +70,14 @@ aws s3 cp network/nationwide/roads_nationwide_v2.pmtiles \
 Access は Cloudflare の手前で効くので、Worker・コンテナのコードは変わらない（ログインしていない人のリクエストはコンテナまで来ず、起こしもしない）。
 Zero Trust の Free プランは 50 人まで無料（ログインした人の数で数える）。
 
-設定（ダッシュボード）:
-1. Workers & Pages → `ksj-route-search` → Settings → Domains & Routes → `workers.dev` の「…」→ **Enable Cloudflare Access**
-2. できた Access のアプリケーション（Zero Trust → Access → Applications）のポリシーを、Include: **Emails ending in** `@mierune.co.jp` にする（既定はアカウントの持ち主だけ）
-3. ログイン方法は既定のワンタイム PIN（メールにコードが届く）。Google ログインにするなら Zero Trust → Settings → Authentication で足す
+設定（ダッシュボード・[公式手順](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)）:
+1. Workers & Pages → `ksj-route-search` → **Access** タブ → **Protect this Worker behind Access**
+2. **All traffic** を選ぶ（Previews only だと本番の URL は守られない）
+3. **Authentication policy** で **Email domain** に `mierune.co.jp` を指定して **Apply Access**
 
 確認: シークレットウィンドウで開くと Cloudflare のログイン画面になり、社外のメールではコードが届かない。
 
-一般公開に戻す（FOSS4G 当日など）: 1 の画面で **Disable Cloudflare Access**。コードとデプロイは要らない。
+一般公開に戻す（FOSS4G 当日など）: 同じ **Access** タブで外す。コードとデプロイは要らない。
 
 ## デプロイ手順（初回・コードだけ直したとき）
 
