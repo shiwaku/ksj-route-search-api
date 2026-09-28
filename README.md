@@ -5,6 +5,8 @@ SvelteKit / FastAPI / PostgreSQL の3層構成。
 
 **公開版: https://ksj-route-search.shi-works-worker.workers.dev**（DB なし。しばらく使われないとスリープし、寝ている状態からは使えるまで 20 秒ほどかかる）
 
+> **社内限定で公開中**（2026-09-28〜）。Cloudflare Access で `@mierune.co.jp` のメールでログインした人だけが開ける（設定はダッシュボード側・`deploy/cloudflare/README.md`「社内限定の公開」）
+
 埼玉県版・2層構成の [shiwaku/ksj-route-search-api-legacy](https://github.com/shiwaku/ksj-route-search-api-legacy) を土台に、
 全国規模へ拡張し3層アーキテクチャへ作り替えたもの。
 
