@@ -71,6 +71,7 @@ Access は Cloudflare の手前で効くので、Worker・コンテナのコー�
 Zero Trust の Free プランは 50 人まで無料（ログインした人の数で数える）。
 
 設定（ダッシュボード・[公式手順](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)）:
+0. （アカウントで初めてのときだけ）**Access** タブの「このアカウントの Zero Trust を設定する」でチーム名（ログイン画面の `<チーム名>.cloudflareaccess.com`）を決め、**Free** プランを選ぶ
 1. Workers & Pages → `ksj-route-search` → **Access** タブ → **Protect this Worker behind Access**
 2. **All traffic** を選ぶ（Previews only だと本番の URL は守られない）
 3. **Authentication policy** で **Email domain** に `mierune.co.jp` を指定して **Apply Access**
