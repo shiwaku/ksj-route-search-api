@@ -78,6 +78,9 @@ Zero Trust の Free プランは 50 人まで無料（ログインした人の�
 4. **ログイン方法に One-time PIN を足す**: Zero Trust → インテグレーション → ID プロバイダー → 追加 → **One-time PIN**。
    Worker の Access タブから作ると ID プロバイダーは Cloudflare（「アカウントメンバーに制限する」がオン）だけになり、
    ログインできるのはアカウントの持ち主（gmail）だけ → ポリシーに合わず「That account does not have access.」になる（2026-09-28）
+5. **ログインをメールだけにする**: アプリケーション（ksj-route-search - Cloudflare Workers）の「認証」で
+   「利用可能なすべての ID プロバイダーを受け入れる」をオフ → 「使用可能な ID プロバイダーを選択」で One-time PIN だけ →
+   「インスタント認証を適用」をオン → 保存。ログイン画面がメール入力だけになる（Cloudflare でのログインが出ない）
 
 確認: シークレットウィンドウで開くと Cloudflare のログイン画面になり、社外のメールではコードが届かない。
 
