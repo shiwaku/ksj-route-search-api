@@ -75,6 +75,9 @@ Zero Trust の Free プランは 50 人まで無料（ログインした人の�
 1. Workers & Pages → `ksj-route-search` → **Access** タブ → **Protect this Worker behind Access**
 2. **All traffic** を選ぶ（Previews only だと本番の URL は守られない）
 3. **Authentication policy** で **Email domain** に `mierune.co.jp` を指定して **Apply Access**
+4. **ログイン方法に One-time PIN を足す**: Zero Trust → インテグレーション → ID プロバイダー → 追加 → **One-time PIN**。
+   Worker の Access タブから作ると ID プロバイダーは Cloudflare（「アカウントメンバーに制限する」がオン）だけになり、
+   ログインできるのはアカウントの持ち主（gmail）だけ → ポリシーに合わず「That account does not have access.」になる（2026-09-28）
 
 確認: シークレットウィンドウで開くと Cloudflare のログイン画面になり、社外のメールではコードが届かない。
 
