@@ -64,6 +64,25 @@ aws s3 cp network/nationwide/roads_nationwide_v2.pmtiles \
 確認: `curl -I https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles` が 200 で、`Content-Length` が元ファイルと同じ。
 **存在しないキーは Cloudflare の HTML の 404 になる**ので、ドメインの不具合と取り違えないこと（R2-STRUCTURE.md §6.6）。
 
+## 社内限定の公開（Cloudflare Access）
+
+2026-09-28 から、workers.dev の前に Cloudflare Access を置いて `@mierune.co.jp` のメールでログインした人だけ通している。
+Access は Cloudflare の手前で効くので、Worker・コンテナのコードは変わらない（ログインしていない人のリクエストはコンテナまで来ず、起こしもしない）。
+Zero Trust の Free プランは 50 人まで無料（ログインした人の数で数える）。
+
+設定（ダッシュボード・[公式手順](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)）:
+0. （アカウントで初めてのときだけ）**Access** タブの「このアカウントの Zero Trust を設定する」でチーム名（ログイン画面の `<チーム名>.cloudflareaccess.com`）を決め、**Free** プランを選ぶ
+1. Workers & Pages → `ksj-route-search` → **Access** タブ → **Protect this Worker behind Access**
+2. **All traffic** を選ぶ（Previews only だと本番の URL は守られない）
+3. **Authentication policy** で **Email domain** に `mierune.co.jp` を指定して **Apply Access**
+4. **ログイン方法に One-time PIN を足す**: Zero Trust → インテグレーション → ID プロバイダー → 追加 → **One-time PIN**。
+   Worker の Access タブから作ると ID プロバイダーは Cloudflare（「アカウントメンバーに制限する」がオン）だけになり、
+   ログインできるのはアカウントの持ち主（gmail）だけ → ポリシーに合わず「That account does not have access.」になる（2026-09-28）
+
+確認: シークレットウィンドウで開くと Cloudflare のログイン画面になり、社外のメールではコードが届かない。
+
+一般公開に戻す（FOSS4G 当日など）: 同じ **Access** タブで外す。コードとデプロイは要らない。
+
 ## デプロイ手順（初回・コードだけ直したとき）
 
 Docker Desktop が動いていること（wrangler がイメージをビルドする）。`network/nationwide/KSJ_N13-24_nationwide_graph/`（組み立て済みのグラフ）があること（`preprocess/build_graph_arrays.py` で生成・git 管理外）。
