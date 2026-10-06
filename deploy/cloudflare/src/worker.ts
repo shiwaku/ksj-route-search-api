@@ -4,12 +4,17 @@
 //   それ以外 → Static Assets（wrangler.jsonc の run_worker_first に無いパスはここに来ない）
 import { Container, getContainer } from "@cloudflare/containers";
 
-export class RouteContainer extends Container {
+export class RouteContainer extends Container<Env> {
   defaultPort = 8000;
-  // 最後のリクエストからこの時間で寝る。寝ている間は課金されず、次のリクエストで起きる
-  sleepAfter = "10m";
   // グラフはイメージに焼いてあり、外に取りに行くものはない
   enableInternet = false;
+
+  constructor(ctx: DurableObjectState<{}>, env: Env) {
+    // 最後のリクエストからこの時間で寝る。寝ている間は課金されず、次のリクエストで起きる（約 20 秒）。
+    // 発表の日だけ延ばせるよう wrangler.jsonc の vars で変える（issue #27）。
+    // クラスフィールドに書くと super() の後で上書きされるので、options で渡す
+    super(ctx, env, { sleepAfter: env.SLEEP_AFTER || "10m" });
+  }
 }
 
 interface Env {
@@ -18,6 +23,8 @@ interface Env {
   ASSETS: Fetcher;
   API_LIMITER: RateLimit;
   IP_LIMITER: RateLimit;
+  CONTAINER_COUNT: string;
+  SLEEP_AFTER: string;
 }
 
 // 公開するのは探索系だけ。/bookmarks /bench はコンテナ側でも登録されない（DATABASE_URL なし）
@@ -62,8 +69,32 @@ async function api(request: Request, url: URL, env: Env): Promise<Response> {
     }
   }
   url.pathname = path;
-  // インスタンス名を固定して 1 台に寄せる（グラフはそのコンテナのメモリ上にある）
-  return getContainer(env.ROUTE_CONTAINER, "main").fetch(new Request(url, request));
+  // /health?instance=k は k 台目に直接聞く（発表前に全台を起こす・確かめる。README「当日の構成」）。
+  // それ以外は台数の中からランダムに選ぶ。探索はどの台でも同じ結果になる（グラフは各台のメモリに同じものがある）
+  const count = containerCount(env);
+  let i = Math.floor(Math.random() * count);
+  if (path === "/health" && url.searchParams.has("instance")) {
+    i = Number(url.searchParams.get("instance"));
+    if (!Number.isInteger(i) || i < 0 || i >= count) return json(400, `instance は 0〜${count - 1} で指定してください`);
+    url.searchParams.delete("instance");
+  }
+  const res = await instance(env, i).fetch(new Request(url, request));
+  // どの台が返したかを見えるようにする（振り分けの確認用）
+  const out = new Response(res.body, res);
+  out.headers.set("X-Container-Instance", String(i));
+  return out;
+}
+
+// 台数は vars の CONTAINER_COUNT（issue #26）。wrangler.jsonc の max_instances 以下にすること。
+// 超えた分の台は起動できず、そこに振られたリクエストは失敗する
+function containerCount(env: Env): number {
+  const n = Number(env.CONTAINER_COUNT);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+// 0 台目は 1 台運用のときからの名前 "main" のまま（台数を戻したときに同じインスタンスを使い続ける）
+function instance(env: Env, i: number) {
+  return getContainer(env.ROUTE_CONTAINER, i === 0 ? "main" : `main-${i}`);
 }
 
 // R2 から毎回読むと Range 1 回に約 0.2 秒掛かり、地図 1 画面で数十回読むので描画が遅い（issue #4）。
