@@ -188,6 +188,8 @@ docker compose exec -T -e PGPASSWORD=route db psql -h localhost -U route -d rout
 
 画面の一気通貫テスト: `node web/e2e.mjs <出力dir>`（Playwright・headless Chromium）。
 
+Docker なし・DB なしで動かすだけなら `uv run uvicorn api.main:app --port 8000` と `npm run dev` の 2 つでよい（FOSS4G の予備デモ: [`docs/foss4g-2026/backup-demo.md`](docs/foss4g-2026/backup-demo.md)）。
+
 `GET /bench`（scipy vs pgRouting の比較用）を使うときだけ、比較用テーブルを DB に投入する（約 15 秒・1.0 GB）:
 
 ```bash

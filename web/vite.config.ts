@@ -15,8 +15,9 @@ export default defineConfig({
 			adapter: adapter({ fallback: 'index.html' })
 		})
 	],
-	// API は本番もローカルも同一オリジンの /api（deploy-cloudflare.md 6 章）。ローカルは Vite が /api を剥がして 8000 に渡す
+	// API は本番もローカルも同一オリジンの /api（deploy-cloudflare.md 6 章）。ローカルは Vite が /api を剥がして 8000 に渡す。
+	// localhost だと Windows の Node は ::1 に繋ぎ、127.0.0.1 で待つ uvicorn に届かない（ECONNREFUSED ::1:8000）ので IPv4 で書く
 	server: {
-		proxy: { '/api': { target: 'http://localhost:8000', rewrite: (p) => p.replace(/^\/api/, '') } }
+		proxy: { '/api': { target: 'http://127.0.0.1:8000', rewrite: (p) => p.replace(/^\/api/, '') } }
 	}
 });
