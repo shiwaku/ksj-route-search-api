@@ -29,3 +29,6 @@ bench/graphhopper/graph-cache/
 
 # Claude Code の個人設定
 .claude/settings.local.json
+
+# FOSS4G のスライド: テンプレート（社内資料）と出力は大きいので入れない（docs/foss4g-2026/slides/build.py で作る）
+docs/foss4g-2026/*.pptx
