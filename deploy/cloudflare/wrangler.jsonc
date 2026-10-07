@@ -44,10 +44,17 @@
       "image_build_context": "../..",
       // 1/2 vCPU・4 GiB・8 GB disk。常駐 2.2 GiB・起動ピーク 3.2 GiB（ローカル実測 2026-09-26）
       "instance_type": "standard-1",
-      // グラフはメモリ上にあり、1 台で費用の上限を決める（deploy-cloudflare.md 7 章）
+      // グラフはメモリ上にあり、1 台で費用の上限を決める（deploy-cloudflare.md 7 章）。
+      // 台数を増やすときは vars の CONTAINER_COUNT と一緒に上げる（CONTAINER_COUNT ≦ max_instances）
       "max_instances": 1
     }
   ],
+  // CONTAINER_COUNT: /api を振り分ける台数（issue #26）。SLEEP_AFTER: 最後のリクエストから寝るまで（issue #27）。
+  // FOSS4G の当日だけ上げ、終わったら 1・10m に戻す（README「当日の構成」）
+  "vars": {
+    "CONTAINER_COUNT": "1",
+    "SLEEP_AFTER": "10m"
+  },
   "durable_objects": {
     "bindings": [{ "name": "ROUTE_CONTAINER", "class_name": "RouteContainer" }]
   },

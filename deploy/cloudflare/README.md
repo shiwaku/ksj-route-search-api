@@ -12,7 +12,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `wrangler.jsonc` | Assets / R2 / Rate Limiting / Container（`standard-1`・`max_instances: 1`）をまとめて定義 |
+| `wrangler.jsonc` | Assets / R2 / Rate Limiting / Container（`standard-1`・`max_instances: 1`）・台数と寝るまでの時間（`vars`・下の「当日の構成」）をまとめて定義 |
 | `src/worker.ts` | パスで振り分け。タイルのキーは `TILE_KEY`。読んだ範囲は Cache API に置く（下の「タイルのキャッシュ」）。`/api` は `/health` `/reachability` `/route` だけ通し、重い 2 本は端末ごと（IP＋画面が送る `X-Client-Id`）に 10 秒 20 回・IP 全体で 10 秒 300 回（大まかにしか効かない・下の落とし穴） |
 | `Dockerfile` | ルートの Dockerfile ＋ 組み立て済みのグラフ（674 MiB・`preprocess/build_graph_arrays.py`）。parquet は入れない。`DATABASE_URL` を設定しない = ブックマークと `/bench` は無い |
 | `../../.dockerignore` | 許可リスト。wrangler は Dockerfile を標準入力で渡すので、Dockerfile ごとの ignore は効かない |
@@ -133,10 +133,33 @@ Worker が読んだ範囲を Cache API（`caches.default`）に 1 日置き、2 
 
 ## 運用
 
-- **スリープ**: 最後のリクエストから 10 分で寝る（`sleepAfter`）。寝ている間は課金されない。稼働中かどうかは `npx wrangler containers list` で ID を調べ、`npx wrangler containers instances <ID>` の `STATE` を見る（`LIVE INSTANCES` は寝ていても 1 のままで使えない。お手本の README）
+- **スリープ**: 最後のリクエストから 10 分で寝る（`vars.SLEEP_AFTER`）。寝ている間は課金されない。稼働中かどうかは `npx wrangler containers list` で ID を調べ、`npx wrangler containers instances <ID>` の `STATE` を見る（`LIVE INSTANCES` は寝ていても 1 のままで使えない。お手本の README）
 - **ログ**: `npx wrangler tail`、または Cloudflare ダッシュボードの Workers → ksj-route-search → Logs（`observability` 有効）
 - **回数制限に当たる**（画面に `429: リクエストが多すぎます`）なら `wrangler.jsonc` の `ratelimits` の `limit` を上げて `npx wrangler deploy`（`period` は 10 か 60 のみ）。1 人の連打なら `API_LIMITER`（端末ごと）、同じ Wi-Fi の大勢なら `IP_LIMITER`（IP 全体）
 - **費用の上限**は standard-1 を 24 時間起動し続けて約 $32/月（`max_instances: 1`）。設計書 7 章
+
+## 当日の構成（FOSS4G Hokkaido 2026・複数台と寝ない設定）
+
+ふだんは 1 台・10 分で寝る。発表の日だけ台数と寝るまでの時間を上げる（issue #26・#27）。**費用が増えるので、上げる前に確認を取る。**
+
+| 設定 | 場所 | ふだん | 当日の案 |
+|---|---|---|---|
+| 台数 | `wrangler.jsonc` の `vars.CONTAINER_COUNT` と `max_instances`（**両方**。`CONTAINER_COUNT ≦ max_instances`） | 1 | 2〜3 |
+| インスタンスの大きさ | `instance_type` | `standard-1` | `standard-2`（1 vCPU・処理量は未計測） |
+| 寝るまで | `vars.SLEEP_AFTER` | `10m` | `2h` |
+
+- `/api/*` はリクエストごとに台をランダムに選ぶ。応答ヘッダ `X-Container-Instance` でどの台が返したか分かる。0 台目は 1 台運用と同じインスタンス（名前 `main`）
+- 台ごとに寝て、台ごとに起きる（起きるのに約 20 秒）。**発表の前に全台を起こす**:
+
+```bash
+URL=https://ksj-route-search.shi-works-worker.workers.dev
+N=3   # CONTAINER_COUNT と同じ
+for i in $(seq 0 $((N-1))); do curl -s -w " ← $i 台目 %{time_total}s\n" "$URL/api/health?instance=$i"; done
+```
+
+全台が `"status":"ok"` を返せば起きている。Access（社内限定）が掛かっている間は 302 になるので、ブラウザで `/api/health?instance=0` などを開いて確かめる。
+
+- 終わったら `CONTAINER_COUNT: "1"`・`max_instances: 1`・`standard-1`・`SLEEP_AFTER: "10m"` に戻してデプロイ。1 台目以外は使われなくなり、`SLEEP_AFTER` 後に寝る
 
 ## 分かっている落とし穴
 
