@@ -310,8 +310,8 @@ ca.tick_labels.font.size = Pt(14)
 box(s, 9.0, TOP + 0.3, 3.7, 4.1)
 text(s, 9.25, TOP + 0.55, 3.2, 0.5, ['結果は完全一致'], size=18, bold=True)
 text(s, 9.25, TOP + 1.1, 3.2, 1.9, ['到達したノードも、コストも同じ。', '違うのは速さだけ'], size=16, color=MUTED, line=1.35)
-text(s, 9.25, TOP + 2.7, 3.2, 1.0, [[('×12〜19', {'size': 36, 'bold': True, 'color': BLUE})]], line=1.0)
-text(s, 9.25, TOP + 3.4, 3.2, 0.7, ['左の 3 つの比。打ち切り 30〜480 分を通すと 10〜27 倍'], size=14, color=MUTED, line=1.3)
+text(s, 9.25, TOP + 2.7, 3.2, 1.0, [[('10〜27', {'size': 36, 'bold': True, 'color': BLUE}), (' 倍', {'size': 20, 'bold': True, 'color': BLUE})]], line=1.0)
+text(s, 9.25, TOP + 3.4, 3.2, 0.7, ['打ち切り 30〜480 分と経路で測った幅。左はその抜粋'], size=14, color=MUTED, line=1.3)
 
 # ---------------------------------------------------------------- 10. 工夫① 探索: 置き場所
 s = content('差はアルゴリズムではなく、グラフの置き場所', '工夫① 探索',
@@ -501,8 +501,8 @@ text(s, 0.61, 4.35, 7.4, 0.5, ['ksj-route-search.shi-works-worker.workers.dev'],
 text(s, 0.61, 5.6, 7.6, 1.0, ['道路データ: 国土数値情報 道路データ（国土交通省）CC BY 4.0', '測量法に基づく国土地理院長承認（使用）R 8JHs 85',
                               '背景地図: 国土地理院 最適化ベクトルタイル'], size=12, color=WHITE, line=1.3)
 box(s, 8.75, 1.45, 3.9, 3.9, fill=WHITE, radius=0.06)
-s.shapes.add_picture(str(SHOTS / 'qr.png'), Inches(8.95), Inches(1.65), Inches(3.5), Inches(3.5)).name = 'qr'
-text(s, 8.75, 5.5, 3.9, 0.5, ['スマホで読み取り'], size=16, color=WHITE, align=PP_ALIGN.CENTER)
+s.shapes.add_picture(str(SHOTS / 'qr.png'), Inches(9.1), Inches(1.6), Inches(3.2), Inches(3.2)).name = 'qr'
+text(s, 8.75, 4.8, 3.9, 0.45, ['スマホで読み取り'], size=16, color=INK, align=PP_ALIGN.CENTER)
 
 # ---------------------------------------------------------------- 見本スライドを外す
 sldIdLst = prs.slides._sldIdLst
