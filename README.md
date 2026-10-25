@@ -258,3 +258,15 @@ csr_matrix((data, (rows, cols)))   # 同じ (row, col) が複数あると値が�
 直すまで最大 3145（＝31.45分）の誤差が出ていた。
 `shiwaku/ksj-route-search-api` の `src/graph.py` と
 `shiwaku/ksj-reachability-analysis` の `src/reachability_search.py` にも同じパターンがある。
+
+## データ出典
+
+- 道路: [国土数値情報（道路データ）](https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N13-2024.html)（国土交通省）を加工して作成。
+  オープンデータ（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)）。
+  測量法に基づく国土地理院長承認（使用）R 8JHs 85。
+  探索グラフ・道路タイル（PMTiles）・API の応答はこのデータから作ったもので、使うときは同じ出典を表記する
+- 背景地図: [国土地理院 最適化ベクトルタイル](https://maps.gsi.go.jp/development/ichiran.html)（淡色地図風スタイル）。[地理院タイルの利用規約](https://maps.gsi.go.jp/development/ichiran.html)に従う
+
+## ライセンス
+
+コードは [MIT License](LICENSE)。データは上記の出典の利用条件に従う（MIT の対象外）。
