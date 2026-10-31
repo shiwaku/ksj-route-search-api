@@ -333,14 +333,16 @@ text(s, 0.9, TOP + 3.68, 11.6, 0.95, [
 
 # ---------------------------------------------------------------- 11. 工夫① 探索: 3 エンジン
 s = content('既存の経路エンジンを使えばいいのでは？', '工夫① 探索',
-            notes='OSRM・GraphHopper・Valhalla に同じ道路網（東京 23 区）を入れ、ランダム 100 組で経路のリンク列が一致するか比べた')
-text(s, 0.61, TOP, 12.1, 0.9, ['同じ道路網（東京 23 区・10.6 万リンク）を 3 つのエンジンに入れ、ランダム 100 組で経路を比べた'],
-     size=18, color=MUTED)
+            notes='OSRM・GraphHopper・Valhalla に同じ道路網（東京 23 区）を入れ、ランダム 100 組で経路のリンク列が一致するか比べた。'
+                  'OSRM と GraphHopper は厳密解（CH・MLD）なので、違いは所要が同じ経路のどれを選ぶかだけ。'
+                  'Valhalla は階層と双方向 A* の打ち切りで、自分の物差しで測っても OSRM の経路の方が速い組が 82 組中 47 組')
+text(s, 0.61, TOP - 0.1, 12.1, 0.5, ['同じ道路網（東京 23 区・10.6 万リンク）を 3 つのエンジンに入れ、ランダム 100 組で経路を比べた'],
+     size=16, color=MUTED)
 rows = [('組み合わせ', '同じ経路', '所要の差 平均', '最大', '重なり'),
         ('OSRM – GraphHopper', '63 組', '1 秒', '5 秒', '95%'),
         ('OSRM – Valhalla', '18 組', '25 秒', '140 秒', '71%'),
         ('GraphHopper – Valhalla', '17 組', '24 秒', '140 秒', '71%')]
-tbl = s.shapes.add_table(len(rows), 5, Inches(0.61), Inches(TOP + 0.75), Inches(12.1), Inches(2.6))
+tbl = s.shapes.add_table(len(rows), 5, Inches(0.61), Inches(TOP + 0.45), Inches(12.1), Inches(2.2))
 tbl.name = 'table'
 t = tbl.table
 t.first_row = True
@@ -348,7 +350,7 @@ widths = [4.3, 2.0, 2.2, 1.8, 1.8]
 for j, wd in enumerate(widths):
     t.columns[j].width = Inches(wd)
 for i, row in enumerate(rows):
-    t.rows[i].height = Inches(0.65)
+    t.rows[i].height = Inches(0.55)
     for j, v in enumerate(row):
         c = t.cell(i, j)
         c.fill.solid()
@@ -359,31 +361,23 @@ for i, row in enumerate(rows):
         p.alignment = PP_ALIGN.LEFT if j == 0 else PP_ALIGN.RIGHT
         c.margin_right = Inches(0.25)
         r = p.add_run(); r.text = v
-        r.font.size = Pt(18); r.font.bold = (i == 0 or (i == 1 and j == 1))
+        r.font.size = Pt(17); r.font.bold = (i == 0 or (i == 1 and j == 1))
         r.font.color.rgb = WHITE if i == 0 else (BLUE if (i == 1 and j == 1) else INK)
         font_ea(r)
-text(s, 0.61, TOP + 3.65, 12.1, 1.0, [
-    [('3 つとも同じ経路は 15 組。', {'bold': True}), ('外れるのは Valhalla が絡む組み合わせ', {})]], size=18)
-
-# ---------------------------------------------------------------- 12. 工夫① 探索: 厳密さ
-s = content('違いを生むのは、言語ではなく「厳密さ」', '工夫① 探索',
-            notes='OSRM と GraphHopper は厳密解なので、違いは所要が同じ経路のどれを選ぶかだけ。'
-                  'Valhalla は自分の物差しで測っても OSRM の経路の方が速い組が 82 組中 47 組')
-for i, (head, sub, lines, hl) in enumerate([
-    ('OSRM・GraphHopper', '厳密解（CH・MLD）', ['違いは、所要が同じ経路のどれを選ぶかだけ', '所要の差は最大 5 秒（重みの丸め）'], False),
-    ('Valhalla', '速さのために厳密さを手放す', ['階層の打ち切り・双方向 A* の打ち切り', [('自分の物差しでも最短でない', {'bold': True}), ('経路を返す（82 組中 47 組）', {})]], False),
+for i, (head, body) in enumerate([
+    ('OSRM・GraphHopper は厳密解', '違いは所要が同じ経路のどれを選ぶかだけ'),
+    ('Valhalla は打ち切りで速くする', '自分の物差しでも最短でない経路を返す（82 組中 47 組）'),
 ]):
     x = 0.61 + i * 6.2
-    box(s, x, TOP + 0.1, 5.9, 2.85)
-    text(s, x + 0.3, TOP + 0.3, 5.3, 0.5, [head], size=22, bold=True)
-    text(s, x + 0.3, TOP + 0.85, 5.3, 0.45, [sub], size=16, bold=True, color=BLUE)
-    text(s, x + 0.3, TOP + 1.4, 5.3, 1.5, lines, size=17, bullet=True, line=1.25, space_after=6)
-box(s, 0.61, TOP + 3.25, 12.1, 1.45, fill=BLUE)
-text(s, 0.9, TOP + 3.4, 11.6, 1.2, [
-    [('到達圏は「全ノードまでの正確な所要」が要る', {'bold': True, 'size': 20})],
-    ['→ 厳密なダイクストラ法を SciPy で回す今の形が合っている']], size=17, color=WHITE, line=1.4)
+    text(s, x, TOP + 2.8, 5.9, 0.45, [head], size=17, bold=True)
+    text(s, x, TOP + 3.22, 5.9, 0.45, [body], size=15, color=MUTED)
+box(s, 0.61, TOP + 3.8, 12.1, 0.95, fill=BLUE)
+text(s, 0.9, TOP + 3.88, 11.6, 0.8, [
+    [('到達圏は「全ノードまでの正確な所要」が要る', {'bold': True}),
+     ('　→ 厳密なダイクストラ法を SciPy で回す形が合う', {})]], size=17, color=WHITE, line=1.3,
+     anchor=MSO_ANCHOR.MIDDLE)
 
-# ---------------------------------------------------------------- 13. 工夫② 描画: 仕組み
+# ---------------------------------------------------------------- 12. 工夫② 描画: 仕組み
 s = content('道路はベクタタイル、色は feature-state', '工夫② 描画',
             notes='タイルは道路の形だけを持つ。API はリンク ID と到達時間だけを返し、画面で feature-state に入れて塗る')
 image(s, SHOTS / 'venue_120_z12.png', 0.61, TOP, h=4.65, name='map')
@@ -394,7 +388,7 @@ text(s, X2, TOP + 0.05, 13.333 - X2 - 0.45, 4.6, [
     [('画面で塗る', {'bold': True})], ['MapLibre GL JS の feature-state に入れて、時間ごとに色を変える'],
 ], size=17, line=1.3, space_after=4)
 
-# ---------------------------------------------------------------- 14. 工夫② 描画: 塗り方
+# ---------------------------------------------------------------- 13. 工夫② 描画: 塗り方
 s = content('数十万本を一度に塗ると、画面が止まる', '工夫② 描画',
             notes='feature-state を一度に変えると、タイル枚数 × 本数の再計算が 1 フレームに集まる。'
                   '読み込み済みタイルの道路だけを、太い道から 1 フレーム 4,000 本ずつ塗る')
@@ -424,7 +418,7 @@ text(s, 7.3, TOP + 0.6, 5.4, 4.0, [
     ['広域のズームは高速・国道だけのタイルにする'],
 ], size=17, line=1.3, space_after=6)
 
-# ---------------------------------------------------------------- 15. 工夫③ 公開: 数字
+# ---------------------------------------------------------------- 14. 工夫③ 公開: 数字
 s = content('DB を持たず、Cloudflare の 1 台に載せる', '工夫③ 公開',
             notes='0.5 vCPU・4 GiB のコンテナ 1 台。前処理で読むだけのファイルにし、返す形もバイナリにした')
 cw = (12.11 - 0.3) / 2
@@ -444,7 +438,7 @@ for i, (head, before, after, u, how) in enumerate([
                                                 (' ' + u, {'size': 18, 'bold': True, 'color': BLUE})]], line=1.0)
     text(s, x + 0.3, y + 1.48, cw - 0.6, 0.5, [how], size=15, color=INK)
 
-# ---------------------------------------------------------------- 16. 工夫③ 公開: 費用と当日
+# ---------------------------------------------------------------- 15. 工夫③ 公開: 費用と当日
 s = content('使われていなければ寝る。今日は起こしておく', '工夫③ 公開',
             notes='寝ている間は課金されない。今日は台数を増やし、寝ないようにしてある')
 for i, (head, lines) in enumerate([
@@ -459,12 +453,48 @@ for i, (head, lines) in enumerate([
     text(s, x + 0.3, TOP + 1.25, 3.25, 3.2, lines, size=16, bullet=True, line=1.3, space_after=10,
          color=WHITE if hl else INK)
 
-# ---------------------------------------------------------------- 17. 割り切りと今後
+# ---------------------------------------------------------------- 16. その先: 全球へ
+s = content('同じ仕組みで、全球 7,424 万リンク', 'その先: 全球へ',
+            notes='同じ仕組み（SciPy のメモリ上のグラフ・PMTiles）に Overture Maps の道路（幹線だけ）を入れて、'
+                  '手元の PC（64 GB）で全球を動かした。グラフ 1 本のままで大陸をまたぐ経路も 5 秒以内。'
+                  '図は都市ごとの到達圏 120 分を同じ縮尺で並べたもの（制限速度が無い区間は国の法定速度）')
+image(s, SHOTS / 'overture_reach_120_legal.png', 0.61, TOP - 0.1, w=8.6, name='map')
+X3 = 0.61 + 8.6 + 0.35
+for i, (v, u, l) in enumerate([('7,424', '万', 'リンク（幹線だけ・1,771 万 km）'),
+                               ('0.2〜0.5', ' 秒', '到達圏 120 分（東京・パリ・NY）'),
+                               ('4.5', ' 秒', 'リスボン→シンガポール 16,511 km')]):
+    y = TOP - 0.1 + i * 1.62
+    text(s, X3, y, 13.333 - X3 - 0.4, 0.85, [[(v, {'size': 36, 'bold': True, 'color': BLUE}),
+                                              (u, {'size': 18, 'bold': True, 'color': BLUE})]], line=1.0)
+    text(s, X3, y + 0.8, 13.333 - X3 - 0.4, 0.7, [l], size=14, color=MUTED, line=1.2)
+text(s, 0.61, TOP + 4.75, 8.6, 0.4, ['Overture Maps（2026-10-21.0）の transportation・motorway〜tertiary・手元の PC（64 GB）'],
+     size=12, color=MUTED)
+
+# ---------------------------------------------------------------- 17. その先: 分かったこと
+s = content('Overture で分かったこと', 'その先: 全球へ',
+            notes='一方通行が入るのは国土数値情報版に無い利点。ただし日本では中身が OSM と同じで、'
+                  '車道の延長は道路統計年報とほぼ同じ。速度の入り方が国ごとに違うので、都市の比較は前提に注意。'
+                  'メモリが 16 GiB 要るので、今の Cloudflare の 1 台（上限 12 GiB）には載らない')
+cw = (12.11 - 0.3) / 2
+for i, (head, lines) in enumerate([
+    ('入るもの', ['一方通行（国土数値情報版には無い属性）', '全球を同じ手順・同じ形式で扱える']),
+    ('日本では', ['中身は OSM と同じ。車道の延長は道路統計年報とほぼ同じ（123.7 万 km / 統計 123.1 万 km）',
+                 '幅員・道路法の種類は無い']),
+    ('速度', ['制限速度が入っているのは 31%。入り方が国で違い、都市の比較は前提を揃える必要がある']),
+    ('載せ方', ['常駐 16 GiB。Cloudflare のコンテナ 1 台の上限 12 GiB を超えるので、大陸ごとに分ける案']),
+]):
+    x = 0.61 + (i % 2) * (cw + 0.3)
+    y = TOP + (i // 2) * 2.4
+    box(s, x, y, cw, 2.2)
+    text(s, x + 0.3, y + 0.2, cw - 0.6, 0.5, [head], size=20, bold=True, color=BLUE)
+    text(s, x + 0.3, y + 0.8, cw - 0.6, 1.35, lines, size=16, bullet=True, line=1.25, space_after=6)
+
+# ---------------------------------------------------------------- 18. 割り切りと今後
 s = content('割り切りと今後', 'まとめ',
             notes='精度を下げる割り切りであって欠陥ではない、と言う')
 text(s, 0.61, TOP, 7.0, 0.5, ['割り切り'], size=20, bold=True)
 cw = (7.4 - 0.3) / 2
-for i, (head, sub) in enumerate([('車のみ', '徒歩なら細街路こそ経路になる'), ('一方通行は考えない', 'データに属性がない'),
+for i, (head, sub) in enumerate([('車のみ', '徒歩なら細街路こそ経路になる'), ('一方通行は考えない', 'データに属性がない（Overture 版では入れた）'),
                                  ('道路種別ごとの固定速度', '速度・渋滞の属性はない'), ('コンテナの拠点', '日本に固定できず、応答に約 0.2 秒上乗せ')]):
     x = 0.61 + (i % 2) * (cw + 0.3)
     y = TOP + 0.65 + (i // 2) * 1.95
@@ -479,7 +509,7 @@ text(s, 8.65, TOP + 0.85, 3.8, 3.2, [[('経路の階層化', {'bold': True, 'siz
                                      ['タップした所から近い道路に、より自然に寄せる']], size=16, color=WHITE, line=1.4,
      space_after=10)
 
-# ---------------------------------------------------------------- 18. まとめ
+# ---------------------------------------------------------------- 19. まとめ
 s = content('まとめ', notes='伝えたいことは 1 つ')
 text(s, 0.61, 1.6, 12.1, 1.4, [[('オープンデータの道路網だけで、', {'size': 30, 'bold': True})],
                                 [('全国の到達圏をスマホで約 1 秒', {'size': 30, 'bold': True, 'color': BLUE})]], line=1.15)
@@ -493,13 +523,14 @@ for i, (head, body) in enumerate([('どこに置くか', '道路網はメモリ�
     text(s, x + 0.3, 4.2, cw - 0.6, 1.8, body.split('\n'), size=17, line=1.35)
 text(s, 0.61, 6.35, 12.1, 0.5, ['効いたのは、アルゴリズムよりこの 3 つ'], size=16, color=MUTED)
 
-# ---------------------------------------------------------------- 19. 触ってみてください
+# ---------------------------------------------------------------- 20. 触ってみてください
 s = add_slide(2, 'QR を出したまま質疑へ')
 text(s, 0.61, 1.48, 6, 0.44, ['触ってみてください'], size=20, color=WHITE, name='name')
 text(s, 0.61, 2.3, 7.4, 1.9, ['会場から始まる', '到達圏・経路探索'], size=48, bold=True, color=WHITE, line=1.15, name='title')
 text(s, 0.61, 4.35, 7.4, 0.5, ['ksj-route-search.shi-works-worker.workers.dev'], size=18, color=WHITE)
-text(s, 0.61, 5.6, 7.6, 1.0, ['道路データ: 国土数値情報 道路データ（国土交通省）CC BY 4.0', '測量法に基づく国土地理院長承認（使用）R 8JHs 85',
-                              '背景地図: 国土地理院 最適化ベクトルタイル'], size=12, color=WHITE, line=1.3)
+text(s, 0.61, 5.35, 7.6, 1.0, ['道路データ: 国土数値情報 道路データ（国土交通省）CC BY 4.0', '測量法に基づく国土地理院長承認（使用）R 8JHs 85',
+                              '背景地図: 国土地理院 最適化ベクトルタイル',
+                              '全球版: © Overture Maps Foundation, © OpenStreetMap contributors'], size=12, color=WHITE, line=1.3)
 box(s, 8.75, 1.45, 3.9, 3.9, fill=WHITE, radius=0.06)
 s.shapes.add_picture(str(SHOTS / 'qr.png'), Inches(9.1), Inches(1.6), Inches(3.2), Inches(3.2)).name = 'qr'
 text(s, 8.75, 4.8, 3.9, 0.45, ['スマホで読み取り'], size=16, color=INK, align=PP_ALIGN.CENTER)
