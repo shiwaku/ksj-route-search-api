@@ -182,20 +182,47 @@ text(s, X, 4.1, 13.333 - X - 0.5, 1.0, [[('85', {'size': 48, 'bold': True, 'colo
 text(s, X, 5.0, 13.333 - X - 0.5, 0.8, ['探索して返すまで。', '描画 111 ms と合わせて 0.2 秒'], size=16, color=MUTED, line=1.3)
 
 # ---------------------------------------------------------------- 4. 背景
-s = content('道路ネットワークが、オープンデータになった', '背景',
-            notes='経路探索の道路網は有償が当たり前だった。2026 年 4 月に国土数値情報の道路データが CC BY 4.0 で公開')
-box(s, 0.61, TOP, 4.6, 4.6, fill=BLUE)
-text(s, 0.9, TOP + 0.35, 4.0, 0.5, ['国土数値情報 道路データ'], size=18, bold=True, color=WHITE)
-text(s, 0.9, TOP + 1.0, 4.0, 1.2, [[('約 2,400', {'size': 54, 'bold': True, 'color': WHITE}),
-                                    ('万本', {'size': 24, 'bold': True, 'color': WHITE})]], line=1.0)
-text(s, 0.9, TOP + 2.2, 4.0, 0.5, ['全国の道路中心線'], size=16, color=WHITE)
-text(s, 0.9, TOP + 3.05, 4.0, 1.2, ['2026 年 4 月公開', 'CC BY 4.0（商用利用も可）'], size=18, bold=True,
-     color=WHITE, line=1.4)
-text(s, 5.75, TOP + 0.1, 6.9, 4.4, [
-    'これまで、経路探索・到達圏分析に使う道路網は有償のもの（DRM など）が一般的だった',
-    '国土交通省が国土数値情報の道路データを公開し、誰でも自由に使えるようになった',
-    'ただし配られるのはライン（道路中心線）。経路探索にはノード・リンクの形に組み直す必要がある',
-], size=20, bullet=True, line=1.3, space_after=14)
+s = content('国土数値情報 道路データ', '背景',
+            notes='経路探索の道路網は有償（DRM など）が当たり前だった。2026 年 4 月、約 30 年ぶりに更新され CC BY 4.0 で公開。'
+                  '配られるのはライン（道路中心線）なので、経路探索にはノード・リンクに組み直す。'
+                  '属性に一方通行・速度は無い（あとの割り切りにつながる）。右の地図の青が、今回の経路探索に使った道路')
+text(s, 0.61, 1.72, 6.6, 0.45, ['約 30 年ぶりの更新で、全国の道路がオープンデータに'], size=18, bold=True, color=BLUE)
+tag = box(s, 0.61, 2.3, 1.95, 0.4, fill=BLUE, radius=0.2)
+text(s, 0.61, 2.3, 1.95, 0.4, ['2026 年 4 月公開'], size=14, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+     anchor=MSO_ANCHOR.MIDDLE)
+for i, (k, v) in enumerate([('基準年', '2024 年度版'), ('更新', '約 30 年ぶり（前の版は 1995 年版）'),
+                            ('形式', '全国 約 2,400 万本のライン（道路中心線）'), ('ライセンス', 'CC BY 4.0（商用利用も可）')]):
+    y = 2.85 + i * 0.36
+    text(s, 0.75, y, 1.4, 0.36, [k], size=14, bold=True)
+    text(s, 2.15, y, 5.1, 0.36, [v], size=14)
+rows = [('属性', '内容'), ('種別', '通常部・庭園路・徒歩道など'), ('道路分類', '国道・都道府県道・市区町村道・高速自動車国道など'),
+        ('道路状態', '橋・高架・トンネルなど'), ('幅員区分', '3m 未満・3〜5.5m・5.5〜13m・13〜19.5m など'),
+        ('有料区分', '無料・有料'), ('二次メッシュ番号', '地物のある二次メッシュ')]
+tbl = s.shapes.add_table(len(rows), 2, Inches(0.61), Inches(4.4), Inches(6.6), Inches(0.3 * len(rows)))
+tbl.name = 'table'
+t = tbl.table
+t.first_row = True
+t.columns[0].width = Inches(1.75)
+t.columns[1].width = Inches(4.85)
+for i, row in enumerate(rows):
+    t.rows[i].height = Inches(0.3)
+    for j, v in enumerate(row):
+        c = t.cell(i, j)
+        c.fill.solid()
+        c.fill.fore_color.rgb = BLUE if i == 0 else (TINT if i % 2 else WHITE)
+        c.vertical_anchor = MSO_ANCHOR.MIDDLE
+        c.margin_left = Inches(0.12)
+        c.margin_top = c.margin_bottom = Inches(0.02)
+        r = c.text_frame.paragraphs[0].add_run(); r.text = v
+        r.font.size = Pt(12); r.font.bold = (i == 0 or j == 0)
+        r.font.color.rgb = WHITE if i == 0 else INK
+        font_ea(r)
+text(s, 0.61, 6.55, 6.6, 0.35, [[('一方通行・速度の属性は無い', {'bold': True}), ('　→ 速度は道路分類から決める', {'color': MUTED})]],
+     size=13)
+image(s, SHOTS / 'ksj_roads_sapporo.png', 7.73, 1.72, w=5.0, name='map')
+text(s, 7.73, 6.85, 5.0, 0.4, [[('━', {'color': BLUE, 'bold': True}), (' 経路探索に使う道路（国道・都道府県道・高速・幅員 5.5m 以上）', {})],
+                               [('━', {'color': GRAY, 'bold': True}), (' それ以外　札幌中心部・出典: 国土数値情報（道路）', {})]],
+     size=10, color=MUTED, line=1.1)
 
 # ---------------------------------------------------------------- 5. これまでの取り組み
 s = content('これまでの取り組みと、今日の話', '背景',
