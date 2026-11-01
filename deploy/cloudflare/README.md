@@ -64,9 +64,12 @@ aws s3 cp network/nationwide/roads_nationwide_v2.pmtiles \
 確認: `curl -I https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles` が 200 で、`Content-Length` が元ファイルと同じ。
 **存在しないキーは Cloudflare の HTML の 404 になる**ので、ドメインの不具合と取り違えないこと（R2-STRUCTURE.md §6.6）。
 
-## 社内限定の公開（Cloudflare Access）
+## 限定公開（Cloudflare Access）
 
-2026-09-28 から、workers.dev の前に Cloudflare Access を置いて `@mierune.co.jp` のメールでログインした人だけ通している。
+workers.dev の前に Cloudflare Access を置いて、ポリシーに合うメールでログインした人だけ通している。
+- 2026-09-28〜: `@mierune.co.jp` のメール（社内限定）
+- 2026-11-01〜: `shiwaku@mierune.co.jp` だけ（本人限定）
+
 Access は Cloudflare の手前で効くので、Worker・コンテナのコードは変わらない（ログインしていない人のリクエストはコンテナまで来ず、起こしもしない）。
 Zero Trust の Free プランは 50 人まで無料（ログインした人の数で数える）。
 
@@ -82,7 +85,12 @@ Zero Trust の Free プランは 50 人まで無料（ログインした人の�
    「利用可能なすべての ID プロバイダーを受け入れる」をオフ → 「使用可能な ID プロバイダーを選択」で One-time PIN だけ →
    「インスタント認証を適用」をオン → 保存。ログイン画面がメール入力だけになる（Cloudflare でのログインが出ない）
 
-確認: シークレットウィンドウで開くと Cloudflare のログイン画面になり、社外のメールではコードが届かない。
+通す相手を変える（社内 ⇔ 本人だけ）: Zero Trust → アクセス → アプリケーション → `ksj-route-search - Cloudflare Workers` → **ポリシー** で、
+Include を **Emails** = `shiwaku@mierune.co.jp`（本人だけ）か **Email domain** = `mierune.co.jp`（社内）にして保存。
+Include の行は OR なので、本人だけにするときはドメインの行を必ず消す。
+狭めたときは、ログイン済みの人を「セッションを取り消す」（下の確認）で締め出す。取り消さないとセッションが切れるまで（最長 1 週間）入れる。
+
+確認: シークレットウィンドウで開くと Cloudflare のログイン画面になり、ポリシーに合わないメール（本人限定中は他の社員のアドレスも）ではコードが届かない。
 一度ログインするとセッション（1 週間・アプリケーションの「詳細」で設定）の間はログイン画面が出ない。見直すときはシークレットウィンドウで開くか、`/cdn-cgi/access/logout` を開いてログアウトする（全端末まとめてなら Zero Trust → チームとリソース → ユーザー →「セッションを取り消す」）。
 
 一般公開に戻す（FOSS4G 当日など）: 同じ **Access** タブで外す。コードとデプロイは要らない。
@@ -157,7 +165,7 @@ N=3   # CONTAINER_COUNT と同じ
 for i in $(seq 0 $((N-1))); do curl -s -w " ← $i 台目 %{time_total}s\n" "$URL/api/health?instance=$i"; done
 ```
 
-全台が `"status":"ok"` を返せば起きている。Access（社内限定）が掛かっている間は 302 になるので、ブラウザで `/api/health?instance=0` などを開いて確かめる。
+全台が `"status":"ok"` を返せば起きている。Access（限定公開）が掛かっている間は 302 になるので、ブラウザで `/api/health?instance=0` などを開いて確かめる。
 
 - 終わったら `CONTAINER_COUNT: "1"`・`max_instances: 1`・`standard-1`・`SLEEP_AFTER: "10m"` に戻してデプロイ。1 台目以外は使われなくなり、`SLEEP_AFTER` 後に寝る
 
