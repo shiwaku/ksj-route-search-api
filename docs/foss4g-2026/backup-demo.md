@@ -69,7 +69,7 @@ Docker で動かすなら `docker compose up -d`（DB も一緒に立つ・ブ�
 
 ## 当日の朝の確認（公開版）
 
-1. 社内限定（Cloudflare Access）を外したかを確かめる: シークレットウィンドウで開いてログイン画面が出ないこと（外し方は `deploy/cloudflare/README.md`「社内限定の公開」）
+1. 限定公開（Cloudflare Access）を外したかを確かめる: シークレットウィンドウで開いてログイン画面が出ないこと（外し方は `deploy/cloudflare/README.md`「限定公開」）
 2. 全台を起こす: `deploy/cloudflare/README.md`「当日の構成」のコマンド。全台が `"status":"ok"`
 3. スマホで開き、札幌駅をタップして到達圏が出ること。経路を 1 本引くこと
 4. 駄目なら②に切り替える（起動は 2 分あれば足りる）
