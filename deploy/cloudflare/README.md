@@ -86,7 +86,7 @@ Zero Trust の Free プランは 50 人まで無料（ログインした人の�
    「インスタント認証を適用」をオン → 保存。ログイン画面がメール入力だけになる（Cloudflare でのログインが出ない）
 
 通す相手を変える（社内 ⇔ 本人だけ）: Zero Trust → アクセス → アプリケーション → `ksj-route-search - Cloudflare Workers` → **ポリシー** で、
-Include を **Emails** = `shiwaku@mierune.co.jp`（本人だけ）か **Email domain** = `mierune.co.jp`（社内）にして保存。
+Include を **Emails** = `shiwaku@mierune.co.jp`（本人だけ）か **Emails ending in** = `@mierune.co.jp`（社内）にして保存（セレクター名は公式ドキュメントの英語表記）。
 Include の行は OR なので、本人だけにするときはドメインの行を必ず消す。
 狭めたときは、ログイン済みの人を「セッションを取り消す」（下の確認）で締め出す。取り消さないとセッションが切れるまで（最長 1 週間）入れる。
 
