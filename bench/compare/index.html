@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>経路比較ビューワ</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --panel: #f6f8fa; --same: #1a7f37; --tie: #9a6700; --diff: #cf222e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --panel: #161b22; --same: #3fb950; --tie: #d29922; --diff: #f85149; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif; color: var(--fg); background: var(--bg); display: flex; height: 100vh; }
+  #map { flex: 1; }
+  aside { width: 460px; overflow-y: auto; padding: 14px 16px; border-left: 1px solid var(--line); background: var(--bg); }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 13px; margin: 18px 0 6px; }
+  p, li { color: var(--muted); margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; }
+  .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .same { color: var(--same); font-weight: 600; } .tie { color: var(--tie); font-weight: 600; } .diff { color: var(--diff); font-weight: 600; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  input[type=number] { width: 64px; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .note { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+  #pairs { max-height: 260px; overflow-y: auto; }
+  #pairs tr { cursor: pointer; } #pairs tr:hover td { background: var(--panel); }
+  .status { color: var(--muted); min-height: 1.5em; }
+  @media (max-width: 800px) { body { flex-direction: column; } #map { height: 55vh; flex: none; } aside { width: 100%; border-left: 0; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<aside>
+  <h1>経路比較ビューワ</h1>
+  <p>同じ KSJ 道路ネットワーク（<span id="case"></span>）・同じ速度で、OSRM・GraphHopper・Valhalla の最短経路が同じになるかを見る。
+    地図をクリックして始点 → 終点。マーカーはドラッグで動かせる。</p>
+  <div class="row"><button id="reset">始点・終点を消す</button><span class="status" id="status"></span></div>
+
+  <h2>この 2 地点</h2>
+  <table id="result"><thead><tr><th>エンジン</th><th>距離</th><th>所要</th><th>KSJ 換算</th><th>リンク</th></tr></thead><tbody></tbody></table>
+  <table id="pairtable" style="margin-top:8px"><thead><tr><th>組み合わせ</th><th>経路</th><th>KSJ 換算の差</th><th>重なり</th></tr></thead><tbody></tbody></table>
+
+  <h2>ランダムな組でまとめて比べる</h2>
+  <div class="row">
+    <input type="number" id="n" value="100" min="1" max="1000"> 組
+    seed <input type="number" id="seed" value="1" min="1">
+    <button id="batch">比べる</button>
+  </div>
+  <p id="allsame"></p>
+  <table id="stats" style="margin-top:8px"><thead><tr><th>組み合わせ</th><th>同じ</th><th>違う・所要同じ</th><th>違う・所要も違う</th><th>差の平均</th><th>差の最大</th></tr></thead><tbody></tbody></table>
+  <div id="pairs"><table><tbody></tbody></table></div>
+
+  <h2>読み方</h2>
+  <div class="note">
+    <ul style="margin:0;padding-left:18px">
+      <li><b>始点・終点</b>はクリック位置に最も近い KSJ の交差点ノードに寄せ、その座標を 3 エンジンに渡す（吸着の違いを消す）。</li>
+      <li><b>距離・所要</b>は各エンジンが返した値。どのエンジンも距離を座標から計算し直す。</li>
+      <li><b>KSJ 換算</b>は、各エンジンの経路を KSJ のリンク列に戻し、KSJ のリンクの所要で足し直した値。3 エンジンを同じ物差しで測る。</li>
+      <li><b>同じ</b> = リンク列が完全一致。<b>違う・所要同じ</b> = 別の経路だが KSJ 換算の所要が同じ（所要が同じ経路が複数ある）。
+        <b>違う・所要も違う</b> = KSJ 換算で差がある。重みの丸めや距離の計算の違い、Valhalla は右左折のコストによる。</li>
+      <li><b>重なり</b> = 2 つの経路に共通のリンクの延長 ÷ 和集合の延長。</li>
+    </ul>
+  </div>
+</aside>
+<script>
+const ENGINES = [
+  { key: 'osrm', label: 'OSRM', color: '#0969da', width: 4, offset: -5 },
+  { key: 'graphhopper', label: 'GraphHopper', color: '#1a7f37', width: 4, offset: 0 },
+  { key: 'valhalla', label: 'Valhalla', color: '#d1242f', width: 4, offset: 5 },
+];
+const PAIRS = [['osrm', 'graphhopper'], ['osrm', 'valhalla'], ['graphhopper', 'valhalla']];
+const LABEL = Object.fromEntries(ENGINES.map((e) => [e.key, e.label]));
+const COLOR = Object.fromEntries(ENGINES.map((e) => [e.key, e.color]));
+const pairLabel = ([p, q]) => `<span class="sw" style="background:${COLOR[p]};width:9px;margin-right:0"></span><span class="sw" style="background:${COLOR[q]};width:9px"></span>${LABEL[p]} – ${LABEL[q]}`;
+const $ = (id) => document.getElementById(id);
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: { pale: { type: 'raster', tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'], tileSize: 256,
+      attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>' } },
+    layers: [{ id: 'pale', type: 'raster', source: 'pale' }],
+  },
+  center: [139.74, 35.68], zoom: 11,
+});
+let origin = null, dest = null;
+const marker = (color) => new maplibregl.Marker({ color, draggable: true });
+const mo = marker('#1f883d'), md = marker('#cf222e');
+
+map.on('load', async () => {
+  const info = await (await fetch('api/info')).json();
+  $('case').textContent = `${info.case}・${info.links.toLocaleString()} リンク`;
+  const [w, s, e, n] = info.bbox;
+  map.fitBounds([[w, s], [e, n]], { padding: 20, duration: 0 });
+  map.addSource('bbox', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[w, s], [e, s], [e, n], [w, n], [w, s]] } } });
+  map.addLayer({ id: 'bbox', type: 'line', source: 'bbox', paint: { 'line-color': '#8250df', 'line-width': 1.5, 'line-dasharray': [3, 2] } });
+  for (const en of ENGINES) {
+    map.addSource(en.key, { type: 'geojson', data: empty() });
+    map.addLayer({ id: en.key, type: 'line', source: en.key, layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': en.color, 'line-width': en.width, 'line-offset': en.offset, 'line-opacity': 0.9 } });
+  }
+});
+const empty = () => ({ type: 'FeatureCollection', features: [] });
+
+map.on('click', (ev) => {
+  if (!origin || (origin && dest)) { origin = ev.lngLat; dest = null; mo.setLngLat(origin).addTo(map); md.remove(); clearRoutes(); }
+  else { dest = ev.lngLat; md.setLngLat(dest).addTo(map); run(); }
+});
+mo.on('dragend', () => { origin = mo.getLngLat(); if (dest) run(); });
+md.on('dragend', () => { dest = md.getLngLat(); run(); });
+$('reset').onclick = () => { origin = dest = null; mo.remove(); md.remove(); clearRoutes(); };
+
+function clearRoutes() {
+  for (const en of ENGINES) map.getSource(en.key)?.setData(empty());
+  $('result').tBodies[0].innerHTML = '';
+  $('pairtable').tBodies[0].innerHTML = '';
+  $('status').textContent = '';
+}
+
+function verdict(x) {
+  if (x.error) return `<span class="diff">—</span>`;
+  if (x.same) return `<span class="same">同じ</span>`;
+  if (x.tie) return `<span class="tie">違う・所要同じ</span>`;
+  return `<span class="diff">違う・所要も違う</span>`;
+}
+const sec = (min) => `${min >= 0 ? '+' : ''}${(min * 60).toFixed(0)} 秒`;
+
+async function run(a = origin, b = dest) {
+  $('status').textContent = '探索中…';
+  const q = new URLSearchParams({ from_lat: a.lat, from_lon: a.lng, to_lat: b.lat, to_lon: b.lng });
+  const r = await (await fetch('api/compare?' + q)).json();
+  mo.setLngLat([r.origin.lon, r.origin.lat]).addTo(map); md.setLngLat([r.dest.lon, r.dest.lat]).addTo(map);
+  origin = { lat: r.origin.lat, lng: r.origin.lon }; dest = { lat: r.dest.lat, lng: r.dest.lon };
+  $('result').tBodies[0].innerHTML = ENGINES.map((en) => {
+    const e = r.engines[en.key];
+    map.getSource(en.key).setData(e.coords ? { type: 'Feature', geometry: { type: 'LineString', coordinates: e.coords } } : empty());
+    return `<tr><td><span class="sw" style="background:${en.color}"></span>${en.label}</td>` + (e.error
+      ? `<td colspan="4" style="text-align:left">${e.error}</td>`
+      : `<td>${(e.dist_m / 1000).toFixed(2)} km</td><td>${e.time_min.toFixed(2)} 分</td><td>${e.ksj_time_min?.toFixed(2) ?? '—'} 分</td>`
+        + `<td>${e.link_count}${e.gaps ? ` <span class="diff" title="照合の取りこぼし">(${e.gaps})</span>` : ''}</td>`) + '</tr>';
+  }).join('');
+  $('pairtable').tBodies[0].innerHTML = PAIRS.map((pq) => {
+    const x = r.pairs[pq.join('|')];
+    return `<tr><td>${pairLabel(pq)}</td><td>${verdict(x)}</td><td>${x.error || x.same ? '' : sec(x.ksj_time_diff_min)}</td>`
+      + `<td>${x.error ? '' : (x.overlap * 100).toFixed(0) + '%'}</td></tr>`;
+  }).join('');
+  $('status').textContent = '';
+}
+
+$('batch').onclick = async () => {
+  const n = $('n').value, seed = $('seed').value;
+  $('batch').disabled = true; $('status').textContent = `${n} 組を探索中…`;
+  try {
+    const r = await (await fetch(`api/batch?n=${n}&seed=${seed}`)).json();
+    $('status').textContent = `${r.n} 組・${r.seconds} 秒`;
+    $('allsame').innerHTML = `3 つとも同じ経路: <b>${r.all_same} / ${r.n} 組</b>（${(100 * r.all_same / r.n).toFixed(0)}%）`;
+    $('stats').tBodies[0].innerHTML = PAIRS.map((pq) => {
+      const s = r.stats[pq.join('|')];
+      const pct = (x) => `${x}（${(100 * x / s.pairs).toFixed(0)}%）`;
+      return `<tr><td>${pairLabel(pq)}</td><td class="same">${pct(s.same)}</td><td class="tie">${pct(s.tie)}</td>`
+        + `<td class="diff">${pct(s.other)}</td><td>${(s.abs_diff_mean_min * 60).toFixed(1)} 秒</td><td>${(s.abs_diff_max_min * 60).toFixed(0)} 秒</td></tr>`;
+    }).join('');
+    // 3 つが揃わなかった組を、KSJ 換算の差が大きい順に並べる（クリックで地図に出す）
+    const rows = r.rows.map((row, i) => {
+      const xs = PAIRS.map((pq) => row.pairs[pq.join('|')]);
+      return { row, i, xs, max: Math.max(...xs.map((x) => Math.abs(x.ksj_time_diff_min ?? 0))) };
+    }).filter((x) => x.xs.some((v) => !v.same)).sort((p, q) => q.max - p.max);
+    $('pairs').querySelector('tbody').innerHTML =
+      `<tr><th>#</th>${PAIRS.map((pq) => `<th>${LABEL[pq[0]].slice(0, 5)}–${LABEL[pq[1]].slice(0, 5)}</th>`).join('')}</tr>` +
+      rows.map((x) => `<tr data-i="${x.i}"><td>${x.i + 1}</td>`
+        + x.xs.map((v) => `<td class="${v.error ? '' : v.same ? 'same' : v.tie ? 'tie' : 'diff'}">${v.error ? '—' : v.same ? '同じ' : v.tie ? '所要同じ' : sec(v.ksj_time_diff_min)}</td>`).join('')
+        + '</tr>').join('');
+    $('pairs').querySelectorAll('tr[data-i]').forEach((tr) => tr.onclick = () => {
+      const row = r.rows[+tr.dataset.i];
+      const a = { lat: row.from[0], lng: row.from[1] }, b = { lat: row.to[0], lng: row.to[1] };
+      run(a, b).then(() => map.fitBounds([[Math.min(a.lng, b.lng), Math.min(a.lat, b.lat)], [Math.max(a.lng, b.lng), Math.max(a.lat, b.lat)]], { padding: 60 }));
+    });
+  } finally { $('batch').disabled = false; }
+};
+</script>
+</body>
+</html>
