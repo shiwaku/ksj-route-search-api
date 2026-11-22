@@ -6,6 +6,7 @@ scipy と同じ 388 万リンク・同じ速度テーブルを、OSM の way/nod
 向きは無向グラフなので問わないが、端点がどの交差点ノードかは連結性に直結するので、始点座標を node1 と照合して合わなければ入れ替える。
 
     uv run --with osmium python preprocess/export_osm_pbf.py            # → network/nationwide/roads_nationwide.osm.pbf
+    uv run --with osmium python preprocess/export_osm_pbf.py tokyo23    # → network/tokyo23/roads_tokyo23.osm.pbf（clip_network.py で切り出した範囲）
 """
 import sys, time
 from pathlib import Path
@@ -18,8 +19,9 @@ import osmium
 from osmium.osm import mutable as M
 
 BASE = Path(__file__).resolve().parent.parent
-D = BASE / 'network' / 'nationwide'
-OUT = D / 'roads_nationwide.osm.pbf'
+CASE = sys.argv[1] if len(sys.argv) > 1 else 'nationwide'
+D = BASE / 'network' / CASE
+OUT = D / f'roads_{CASE}.osm.pbf'
 SPEED_KMH = {'1': 35, '2': 30, '3': 20, '4': 80, '5': 20, '6': 20}      # build_network_parquet.py と同じ
 # highway は速度には使わない（maxspeed で与える）。Valhalla の階層分けだけに効く: trunk/primary は最上位（4° タイル）に入り、
 # 国道+都道府県道を全部そこに置くと「Exceeded maximum edgeinfo offset」（1 タイル 32 MB 上限）で構築が落ちた（9/11）。国道→secondary、県道→tertiary に下げる
@@ -27,13 +29,13 @@ HIGHWAY = {'1': 'secondary', '2': 'tertiary', '3': 'residential', '4': 'motorway
 INTERIOR_BASE = 10 ** 12
 
 t0 = time.perf_counter()
-nodes = pq.read_table(D / 'KSJ_N13-24_nationwide_道路ノード.parquet').to_pandas()
+nodes = pq.read_table(D / f'KSJ_N13-24_{CASE}_道路ノード.parquet').to_pandas()
 node_xy = shapely.get_coordinates(shapely.from_wkb(nodes['geometry'].to_numpy()))
 node_ids = nodes['node_id'].astype('int64').to_numpy()
 id2idx = pd.Series(np.arange(len(node_ids)), index=node_ids)
 print(f'nodes {len(node_ids):,}  {time.perf_counter()-t0:.1f}s', flush=True)
 
-links = pq.read_table(D / 'KSJ_N13-24_nationwide_道路リンク.parquet',
+links = pq.read_table(D / f'KSJ_N13-24_{CASE}_道路リンク.parquet',
                       columns=['node1', 'node2', 'N13_003', 'geometry']).to_pandas()
 n1 = links['node1'].astype('int64').to_numpy(); n2 = links['node2'].astype('int64').to_numpy()
 cls = links['N13_003'].to_numpy()

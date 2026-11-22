@@ -1,0 +1,21 @@
+# 経路比較ビューワ（bench/compare）用の専用エンジン 3 つ。データは ./data（build.sh が作る・gitignore）
+# 設定は 9/11 の全国比較と同じもの（速度 = maxspeed・無向・ターンペナルティなし）を使う
+services:
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend
+    command: osrm-routed --algorithm mld /data/roads.osrm
+    ports: ["5000:5000"]
+    volumes: [./data:/data, ../osrm/ksj.lua:/conf/ksj.lua:ro]
+  graphhopper:
+    image: israelhikingmap/graphhopper
+    # graph-cache が無ければ起動時に取り込む
+    command: -c /conf/graphhopper.yml -i /data/roads.osm.pbf -o /data/graph-cache
+    environment:
+      JAVA_OPTS: "-Xmx1g -Xms256m"
+    ports: ["8989:8989"]
+    volumes: [./data:/data, ../graphhopper/config.yml:/conf/graphhopper.yml:ro]
+  valhalla:
+    image: ghcr.io/valhalla/valhalla
+    command: valhalla_service /conf/valhalla.json 2
+    ports: ["8002:8002"]
+    volumes: [./data:/data, ../valhalla/valhalla.json:/conf/valhalla.json:ro]
