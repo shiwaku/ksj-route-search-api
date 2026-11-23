@@ -349,8 +349,12 @@ class RoadGraph:
             out[n] = cands[np.argmin(w[cands])]
         return out, u
 
-    def route(self, from_lat, from_lon, to_lat, to_lon, cost='time', use_expressway=True):
+    def route(self, from_lat, from_lon, to_lat, to_lon, cost='time', use_expressway=True,
+              limit_cap=None, cap_reason=None):
         """2 地点間の最短経路。経路だけはジオメトリ（LineString 1 本）を返す（設計書 1-2）。
+
+        limit_cap（API 単位）を渡すと、それより遠い経路は探さずに cap_reason で到達不能にする
+        （歩行者の 120 分上限・issue #55）。
 
         返り値 dict: coordinates（[lon, lat] の list・None なら到達不能）, link_ids, summary,
         snap={origin_m, dest_m}, unreachable_reason, elapsed_ms
@@ -375,12 +379,17 @@ class RoadGraph:
         km = math.dist((slat, slon * math.cos(math.radians((slat + tlat) / 2))),
                        (tlat, tlon * math.cos(math.radians((slat + tlat) / 2)))) * 111
         guess = (km * ROUTE_MIN_PER_KM[use_expressway] + 15) if cost == 'time' else (km * 1500 + 2000)
-        for limit in [guess * 2 ** k for k in range(ROUTE_LIMIT_TRIES)] + [np.inf]:
+        limits = [guess * 2 ** k for k in range(ROUTE_LIMIT_TRIES)] + [np.inf]
+        if limit_cap is not None:
+            limits = sorted({min(x, limit_cap) for x in limits})
+        for limit in limits:
             d, pred = dijkstra(G, directed=True, indices=s, return_predecessors=True,
                                limit=limit / COST_SCALE[cost])
             if np.isfinite(d[t]):
                 break
         if not np.isfinite(d[t]):
+            if limit_cap is not None:
+                return fail(cap_reason or '上限までに届きません')
             return fail('高速道路を使わないと到達できません' if not use_expressway else '経路が見つかりません')
 
         path = [t]

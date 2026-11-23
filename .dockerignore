@@ -6,4 +6,5 @@
 !uv.lock
 !api/
 !network/nationwide/KSJ_*_graph/
+!network/hokkaido_walk/KSJ_*_graph/
 **/__pycache__

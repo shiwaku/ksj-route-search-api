@@ -46,6 +46,7 @@
 | メタデータ | `content-type: application/octet-stream`、`cache-control: public, max-age=3600`（バケットの規約） |
 | 読む側 | Worker が R2 バインディング `TILES` で読み、`/tiles/roads_nationwide.pmtiles` として返す（同一オリジン）。キーは `src/worker.ts` の `TILE_KEY` |
 | 公開 URL | `https://shi-works.com/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles` でも読める（バケットの CORS 設定済み） |
+| 歩行者（北海道・issue #55） | `pmtiles/ksj-route-search/roads_hokkaido_walk_N13-24.pmtiles`（36 MB）。画面は `/tiles/roads_hokkaido_walk.pmtiles` で読む。グラフ（`network/hokkaido_walk/KSJ_N13-24_hokkaido_walk_graph/`）と必ず同じ版にする |
 
 アップロード（どちらでもよい。リポジトリ直下で実行）:
 
@@ -54,6 +55,9 @@
 npx wrangler r2 object put shi-works/pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles \
   --file network/nationwide/roads_nationwide_v2.pmtiles \
   --content-type application/octet-stream --cache-control "public, max-age=3600" --remote
+
+# 歩行者（北海道）
+npx wrangler r2 object put shi-works/pmtiles/ksj-route-search/roads_hokkaido_walk_N13-24.pmtiles   --file network/hokkaido_walk/roads_hokkaido_walk.pmtiles   --content-type application/octet-stream --cache-control "public, max-age=3600" --remote
 
 # aws CLI（バケットの規約に載っている手順。プロファイル r2-shiworks）
 aws s3 cp network/nationwide/roads_nationwide_v2.pmtiles \
@@ -97,7 +101,8 @@ Include の行は OR なので、本人だけにするときはドメインの�
 
 ## デプロイ手順（初回・コードだけ直したとき）
 
-Docker Desktop が動いていること（wrangler がイメージをビルドする）。`network/nationwide/KSJ_N13-24_nationwide_graph/`（組み立て済みのグラフ）があること（`preprocess/build_graph_arrays.py` で生成・git 管理外）。
+Docker Desktop が動いていること（wrangler がイメージをビルドする）。`network/nationwide/KSJ_N13-24_nationwide_graph/` と `network/hokkaido_walk/KSJ_N13-24_hokkaido_walk_graph/`（組み立て済みのグラフ）があること（`preprocess/build_graph_arrays.py` で生成・git 管理外）。
+`network/` をジャンクションやシンボリックリンクにした作業ツリーからはデプロイしない（Docker のビルドコンテキストはリンクをたどらず、`COPY` が失敗する）。
 
 ```bash
 cd deploy/cloudflare

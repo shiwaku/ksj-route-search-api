@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """main.py と bookmarks.py が共有するもの: グラフの状態・到達圏レスポンスの組み立て"""
 
+import os
 import struct
 import threading
 import time
@@ -20,16 +21,40 @@ REACH_CONCURRENCY = 2
 _reach_slots = threading.BoundedSemaphore(REACH_CONCURRENCY)
 LAT_RANGE, LON_RANGE = (20.0, 46.0), (122.0, 154.0)
 
-state = {'graph': None, 'started_at': time.time(), 'error': None, 'db_error': None}
+# --- 歩行者（issue #55）。北海道の全道路（細街路・徒歩道まで・高速なし）を別のグラフで持つ。
+# 所要時間は一律の速さで距離に比例するので、グラフは距離（dist_m）で探し、walk_kmh で分に直す。
+# 空文字にすると歩行者のグラフを読まない（mode=walk は 503）
+WALK_CASE = os.environ.get('ROUTE_WALK_CASE', 'hokkaido_walk')
+WALK_LIMIT_MIN_MAX = 120     # 到達圏・経路とも。4.0 km/h で 8 km
+WALK_KMH_DEFAULT = 4.0       # 一般的な歩く速さ（約 67 m/分）。埼玉県版は 3.6
+WALK_SNAP_MAX_M = 1_000      # これより遠い道路にしか寄れなければ「歩行者の対象外（北海道だけ）」とする
+WALK_AREA = '北海道'
+
+state = {'graph': None, 'started_at': time.time(), 'error': None, 'db_error': None,
+         'walk_graph': None, 'walk_error': None}
 
 
-def graph() -> RoadGraph:
-    g = state['graph']
+def graph(mode='vehicle') -> RoadGraph:
+    key, err, label = ('walk_graph', 'walk_error', '歩行者の') if mode == 'walk' else ('graph', 'error', '')
+    g = state[key]
     if g is None:
-        if state['error']:
-            raise HTTPException(500, f'グラフの読み込みに失敗しました: {state["error"]}')
-        raise HTTPException(503, 'グラフを読み込み中です')
+        if mode == 'walk' and not WALK_CASE:
+            raise HTTPException(503, '歩行者の経路探索は無効です（ROUTE_WALK_CASE が空）')
+        if state[err]:
+            raise HTTPException(500, f'{label}グラフの読み込みに失敗しました: {state[err]}')
+        raise HTTPException(503, f'{label}グラフを読み込み中です')
     return g
+
+
+def walk_m_per_min(walk_kmh):
+    return walk_kmh * 1000 / 60
+
+
+def check_walk_area(g: RoadGraph, lat, lon):
+    """歩行者のグラフは北海道だけ。寄せ先が遠ければ 400 で返す（KDTree は北海道の外でも最寄りを返すため）"""
+    *_, dist_m = g.snap(lat, lon)
+    if dist_m > WALK_SNAP_MAX_M:
+        raise HTTPException(400, f'徒歩の到達圏・経路探索は{WALK_AREA}だけです（最寄りの道路まで {dist_m / 1000:,.1f} km）')
 
 
 def check_japan(lat, lon):
@@ -56,28 +81,46 @@ def _binary_body(meta, link_ids, costs, cost):
     return struct.pack('<I', len(head)) + head + deltas.tobytes() + q.tobytes()
 
 
-def reachability_response(lat, lon, limit_min, cost='time', road_class='auto', use_expressway=True, fmt='json'):
-    """/reachability と /bookmarks/{id}/reachability で同じ形を返す（設計書 3 章）。fmt='bin' はバイナリ（_binary_body）"""
+def reachability_response(lat, lon, limit_min, cost='time', road_class='auto', use_expressway=True, fmt='json',
+                          mode='vehicle', walk_kmh=WALK_KMH_DEFAULT):
+    """/reachability と /bookmarks/{id}/reachability で同じ形を返す（設計書 3 章）。fmt='bin' はバイナリ（_binary_body）
+
+    mode='walk' は歩行者のグラフを距離で探し、コストを walk_kmh で分に直して返す（cost は 'time' 固定）。
+    """
     check_japan(lat, lon)
-    hard = LIMIT_MIN_MAX if cost == 'time' else LIMIT_DIST_MAX
+    walk = mode == 'walk'
+    if walk:
+        cost, road_class, use_expressway = 'time', 'all', True
+        hard = WALK_LIMIT_MIN_MAX
+    else:
+        hard = LIMIT_MIN_MAX if cost == 'time' else LIMIT_DIST_MAX
     if limit_min > hard:
-        raise HTTPException(422, f'limit_min は {hard:,} 以下にしてください（cost={cost}）')
-    g = graph()
+        raise HTTPException(422, f'limit_min は {hard:,} 以下にしてください（' + ('徒歩' if walk else f'cost={cost}') + '）')
+    g = graph(mode)
+    if walk:
+        check_walk_area(g, lat, lon)
     with _reach_slots:
         try:
-            r = g.reachability(lat, lon, limit_min, cost=cost, use_expressway=use_expressway, road_class=road_class)
+            if walk:
+                mpm = walk_m_per_min(walk_kmh)
+                r = g.reachability(lat, lon, limit_min * mpm, cost='dist', road_class='all')
+                r['costs'] = r['costs'] / mpm
+            else:
+                r = g.reachability(lat, lon, limit_min, cost=cost, use_expressway=use_expressway, road_class=road_class)
         except TooManyLinks as e:
             raise HTTPException(400, str(e))
         slat, slon, sm = r['snap']
         meta = {
             'origin': {'lat': lat, 'lon': lon},
             'snap': {'lat': slat, 'lon': slon, 'dist_m': round(sm, 1)},
-            'limit_min': limit_min, 'cost': cost,
+            'limit_min': limit_min, 'cost': cost, 'mode': mode,
             'road_class': road_class, 'use_expressway': use_expressway,
             'road_class_applied': r['road_class_applied'], 'tier': r['tier'],
             'counts': r['counts'], 'count': int(len(r['link_ids'])),
             'elapsed_ms': round(r['elapsed_ms'], 1),
         }
+        if walk:
+            meta['walk_kmh'] = walk_kmh
         if fmt == 'bin':
             return Response(_binary_body(meta, r['link_ids'], r['costs'], cost), media_type='application/octet-stream')
         body = {
