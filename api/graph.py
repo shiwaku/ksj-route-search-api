@@ -371,7 +371,7 @@ class RoadGraph:
 
         # 別成分なら探索せずに即答（東京→札幌など）
         if self.component[s] != self.component[t]:
-            return fail(f'始点と終点が別の道路網に属しています（{self.component_name(s)} / {self.component_name(t)}）')
+            return fail(f'始点と終点が別の道路ネットワークに属しています（{self.component_name(s)} / {self.component_name(t)}）')
         G = self.graphs[(cost, use_expressway)]
         # 打ち切りなしだと近くても全国（360 万ノード）を探し尽くし、1/2 vCPU で毎回 0.8 秒掛かる。
         # 直線距離から上限を見積もり、届かなければ倍にして探し直す。上限内のノードの距離は正確なので、

@@ -13,7 +13,7 @@ from fastapi.responses import Response
 
 from api.graph import RoadGraph, TooManyLinks
 
-LIMIT_MIN_MAX = 1920         # 本州・四国・九州の道路網の「直径」は佐多岬→大間崎 1,891 分。鹿児島起点は 1,800 分で全リンク（343 万本）に到達し以後増えない。80 分刻み × 24 帯 = 1,920 を上限に
+LIMIT_MIN_MAX = 1920         # 本州・四国・九州の道路ネットワークの「直径」は佐多岬→大間崎 1,891 分。鹿児島起点は 1,800 分で全リンク（343 万本）に到達し以後増えない。80 分刻み × 24 帯 = 1,920 を上限に
 LIMIT_DIST_MAX = 500_000     # cost=dist のときの上限（m）
 # 到達圏を同時に計算する本数。1 本ごとに結果の配列を持つので、重なるとメモリが溢れる
 # （standard-1 相当 4 GiB で 120 分 × 8 本同時に OOM・deploy-cloudflare.md 8 章）。超えた分はスレッドで待たせる

@@ -79,7 +79,7 @@ def val_route(url, a, b):
 
 
 def val_trace(url, coords):
-    """経路の形を Valhalla の道路網上でなぞり、Valhalla の物差しでの所要（秒）を返す"""
+    """経路の形を Valhalla の道路ネットワーク上でなぞり、Valhalla の物差しでの所要（秒）を返す"""
     r = s._get(f'{url}/trace_route', {'shape': [{'lat': y, 'lon': x} for x, y in coords], 'costing': 'auto',
                                       'shape_match': 'map_snap', 'directions_type': 'none'})
     return sum(leg['summary']['time'] for leg in r['trip']['legs'])
