@@ -13,7 +13,11 @@ export interface Health {
 	load_seconds?: number;
 	error?: string;
 	features?: ('bookmarks' | 'bench')[]; // DB があるときだけ。公開版は空
+	// 歩行者（北海道だけ・issue #55）。古い API には無い
+	walk?: { enabled: boolean; loaded: boolean; limit_min_max: number; walk_kmh_default: number; links?: number; error?: string };
 }
+
+export type Travel = 'vehicle' | 'walk';
 
 export interface Reachability {
 	origin: { lat: number; lon: number };
@@ -109,13 +113,13 @@ const q = (o: Record<string, string | number | boolean>) =>
 
 export const api = {
 	health: () => call<Health>('/health'),
-	reachability: async (p: { lat: number; lon: number; limit_min: number; use_expressway: boolean; road_class?: RoadClass }) => {
+	reachability: async (p: { lat: number; lon: number; limit_min: number; use_expressway: boolean; road_class?: RoadClass; mode?: Travel; walk_kmh?: number }) => {
 		const res = await fetchOk('/reachability' + q({ road_class: 'auto', ...p, format: 'bin' }));
 		// 公開版のデプロイ直後は、format を知らない古いコンテナが数分残って JSON を返す（2026-09-26 に約 2 分）。そのときは JSON として読む
 		if (res.headers.get('Content-Type')?.includes('json')) return (await res.json()) as Reachability;
 		return decodeReachability(await res.arrayBuffer());
 	},
-	route: (p: { from_lat: number; from_lon: number; to_lat: number; to_lon: number; use_expressway: boolean }) =>
+	route: (p: { from_lat: number; from_lon: number; to_lat: number; to_lon: number; use_expressway: boolean; mode?: Travel; walk_kmh?: number }) =>
 		call<Route>('/route' + q(p)),
 	bookmarks: {
 		list: () => call<{ type: 'FeatureCollection'; features: Bookmark[] }>('/bookmarks'),

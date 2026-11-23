@@ -26,6 +26,16 @@ ksj_to_network_csv.py（GeoJSON・2パス・全リンクをメモリに保持）
 
   # 全国
   python3 build_network_parquet.py --nationwide --case nationwide --filter
+
+  # 歩行者（北海道・issue #55）。細街路・徒歩道まで全部入れ、高速を外す。
+  # 1 次メッシュ 62xx 以降には青森の下北半島の北端が入るので --exclude-bbox で外す
+  python3 build_network_parquet.py --hokkaido --case hokkaido_walk --walk \\
+      --exclude-bbox 140.55,41.0,142.0,41.62
+
+【歩行者（--walk）】
+所要時間は一律の速さで距離に比例するので、API は dist_m だけを使い、歩く速さは
+リクエストの walk_kmh で掛け直す（埼玉県版 ksj-route-search-api-legacy と同じ考え方）。
+time_001min には WALK_KMH（4.0 km/h）で計算した値を入れておく（グラフの形式を車と揃えるため）。
 """
 
 import argparse
@@ -45,6 +55,8 @@ ROAD_CLASS_OK = {'1', '2', '4'}     # 国道・都道府県道・高速自動車
 WIDTH_OK = {'3', '4', '5'}          # 幅員5.5m以上
 SPEED_KMH = {'1': 35, '2': 30, '3': 20, '4': 80, '5': 20, '6': 20}
 ROAD_TYPE = {'1': 3, '2': 5, '3': 7, '4': 1, '5': 7, '6': 7}
+EXPRESSWAY = '4'                    # 高速自動車国道等（--walk では外す）
+WALK_KMH = 4.0                      # --walk の time_001min 用。API は dist_m を walk_kmh で割る
 CRS = 'EPSG:6668'
 R = 6_371_000
 
@@ -76,8 +88,12 @@ g = ap.add_mutually_exclusive_group(required=True)
 g.add_argument('--mesh')
 g.add_argument('--meshes')
 g.add_argument('--nationwide', action='store_true')
+g.add_argument('--hokkaido', action='store_true', help='1 次メッシュ 62xx 以降（北海道。下北半島の北端も入る）')
 ap.add_argument('--case', default=None)
 ap.add_argument('--filter', action='store_true')
+ap.add_argument('--walk', action='store_true', help='歩行者用: 高速を外し、time_001min を WALK_KMH で計算する')
+ap.add_argument('--exclude-bbox', default=None,
+                help='始点がこの範囲（minlon,minlat,maxlon,maxlat）にある道路を外す')
 ap.add_argument('--in-dir', default='input/geoparquet')
 ap.add_argument('--net-dir', default='network')
 ap.add_argument('--verify-against', default=None,
@@ -88,6 +104,9 @@ IN_DIR = BASE / a.in_dir
 if a.nationwide:
     files = sorted(IN_DIR.glob('N13-24_*.parquet'))
     CASE = a.case or 'nationwide'
+elif a.hokkaido:
+    files = sorted(f for f in IN_DIR.glob('N13-24_*.parquet') if int(f.stem[7:9]) >= 62)
+    CASE = a.case or 'hokkaido'
 else:
     meshes = [a.mesh] if a.mesh else [m.strip() for m in a.meshes.split(',')]
     files = [IN_DIR / f'N13-24_{m}.parquet' for m in meshes]
@@ -102,7 +121,10 @@ P_LINKS = OUT_DIR / f'KSJ_N13-24_{CASE}_道路リンク.parquet'
 P_NODES = OUT_DIR / f'KSJ_N13-24_{CASE}_道路ノード.parquet'
 
 t0 = time.time()
-print(f'入力 {len(files)} ファイル / フィルター {"あり" if a.filter else "なし"} / ケース {CASE}')
+EXCLUDE = tuple(float(v) for v in a.exclude_bbox.split(',')) if a.exclude_bbox else None
+print(f'入力 {len(files)} ファイル / フィルター {"あり" if a.filter else "なし"} / ケース {CASE}'
+      + (f' / 歩行者（高速を外す・{WALK_KMH} km/h）' if a.walk else '')
+      + (f' / 除外範囲 {EXCLUDE}' if EXCLUDE else ''))
 
 # 座標 → ノードID。キーは (lon,lat) を 1e-9 丸めして int64 にパック（dict を軽くするため）
 coord_to_nid: dict[int, str] = {}
@@ -159,6 +181,13 @@ for fi, fp in enumerate(files, 1):
         c3 = gdf['N13_003'].astype(str)
         c6 = gdf['N13_006'].astype(str)
         gdf = gdf[c3.isin(ROAD_CLASS_OK) | c6.isin(WIDTH_OK)]
+    if a.walk:
+        gdf = gdf[gdf['N13_003'].astype(str) != EXPRESSWAY]
+    if EXCLUDE:
+        start = gdf.geometry.apply(lambda g: g.coords[0])
+        x = start.str[0]
+        y = start.str[1]
+        gdf = gdf[~((x >= EXCLUDE[0]) & (y >= EXCLUDE[1]) & (x <= EXCLUDE[2]) & (y <= EXCLUDE[3]))]
     tot_kept += len(gdf)
     if len(gdf) == 0:
         continue
@@ -188,7 +217,7 @@ for fi, fp in enumerate(files, 1):
             continue
         c3v = cols['N13_003'][i]
         dm = max(1, round(line_length_m(coords)))
-        sp = SPEED_KMH.get(c3v, 20)
+        sp = WALK_KMH if a.walk else SPEED_KMH.get(c3v, 20)
         n1s.append(ns[0]); n2s.append(ns[1])
         m2s.append(mesh2_code(coords[0][0], coords[0][1]))
         dms.append(dm)

@@ -19,7 +19,7 @@ SvelteKit / FastAPI / PostgreSQL の3層構成。
 | # | 前提 | 理由 |
 |---|---|---|
 | ① | 道路は**幅員5.5m以上**に絞る（`N13_003 in [1,2,4]` or `N13_006 in [3,4,5]`） | N13 は細街路を含み、全国では 2,400万フィーチャになる。DRM の「基本道路」に相当する範囲へ |
-| ② | **移動モードは車のみ**（徒歩は対象外） | ①のフィルターと整合する。徒歩なら細街路こそが経路になる |
+| ② | **徒歩は北海道だけ**。車とは別のグラフ（細街路・徒歩道を含む全道路・高速なし、101.7万リンク）を持ち、歩く速さは一律（画面で 2.0〜8.0 km/h・既定 4.0）。到達圏・経路とも 120 分まで（issue #55） | 徒歩では細街路こそが経路になるので①の道路網は使えない。全国の全道路（約 2,400万本）は今のコンテナのメモリに載らない見込み。一律の速さなら所要時間は距離に比例するので、グラフは距離で持ち、速さはリクエストで掛け直す |
 | ③ | 到達圏は**メッシュを使わず道路リンク単位** | 任意地点を始点にでき、道路形状そのままの粒度で描ける |
 | ④ | 交差点間リンクへの縮約は**実装済み・未適用** | 実測の結果、素の全国グラフで十分な速度が出たため |
 | ⑤ | **一方通行は考慮しない** | 国土数値情報の道路データに一方通行の属性が存在しない |
@@ -124,7 +124,18 @@ uv run python preprocess/make_pmtiles.py --case nationwide          # Windows �
 
 # 探索グラフを組み立てて書き出す（全国 15 秒）。API はこれがあれば起動時に読むだけになる
 uv run python preprocess/build_graph_arrays.py --case nationwide
+
+# 歩行者（北海道・issue #55）。道路網 45 秒（101.7万リンク）・タイル 36 MB・1.4 分・グラフ 4 秒
+# 1 次メッシュ 62xx 以降を全部入れ、高速と青森の下北半島の北端を外す。タイルは z10 から
+uv run python preprocess/build_network_parquet.py --hokkaido --case hokkaido_walk --walk \
+    --exclude-bbox 140.55,41.0,142.0,41.62
+uv run python preprocess/make_pmtiles.py --case hokkaido_walk --min-zoom 10   # Windows では --wsl
+uv run python preprocess/build_graph_arrays.py --case hokkaido_walk
+cp network/hokkaido_walk/roads_hokkaido_walk.pmtiles web/static/tiles/
 ```
+
+API は起動時に車（`nationwide`）を読んだあと、歩行者（環境変数 `ROUTE_WALK_CASE`・既定 `hokkaido_walk`）を読む。
+歩行者のグラフが無くても車は動く（`mode=walk` だけ 500/503。`ROUTE_WALK_CASE=` で読まない）。
 
 parquet を作り直したら `build_graph_arrays.py` も実行し直す。API は `meta.json` に記録した parquet の大きさと
 手元の parquet が違えば、組み立て済みを使わずに parquet から組み立てる（`/health` の `graph_source` が `parquet` になる）。

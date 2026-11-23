@@ -2,13 +2,19 @@
 	import { onMount } from 'svelte';
 	import maplibregl, { type Map, type MapMouseEvent, type ExpressionSpecification } from 'maplibre-gl';
 	import { Protocol } from 'pmtiles';
-	import { api, ApiError, type Health, type Reachability, type Route, type Bookmark } from '$lib/api';
+	import { api, ApiError, type Health, type Reachability, type Route, type Bookmark, type Travel } from '$lib/api';
 
 	// 全国 PMTiles（feature id = link_id）。到達圏は setFeatureState で着色する（設計書 1-1）
-	const SOURCE = 'roads';
 	const SOURCE_LAYER = 'roads';
 	const TILES = `pmtiles://${location.origin}/tiles/roads_nationwide.pmtiles`; // 本番は Worker が R2 から、ローカルは static/tiles/
 	const LIMITS = [15, 30, 60, 120, 240, 480, 720, 1200, 1920]; // 東京起点は 1,200 分、鹿児島起点は 1,800 分で本州・四国・九州の全域に到達。1,920 = 80 分 × 24 帯
+	// 歩行者（北海道の全道路・issue #55）。link_id は車とは別なので、タイルもソースも分ける。
+	// タイルは z10〜13（make_pmtiles.py --min-zoom 10）。歩く速さと打ち切りは埼玉県版と同じスライダー
+	const WALK_TILES = `pmtiles://${location.origin}/tiles/roads_hokkaido_walk.pmtiles`;
+	const SRC: Record<Travel, string> = { vehicle: 'roads', walk: 'roads_walk' };
+	const LAYER_PREFIX: Record<Travel, string> = { vehicle: 'roads', walk: 'walk' };
+	const WALK_KMH = { min: 2, max: 8, step: 0.2 };
+	const WALK_LIMIT = { min: 5, max: 120, step: 5 };
 
 	type LatLon = { lat: number; lon: number };
 
@@ -18,7 +24,13 @@
 	// ---- 状態（Runes）
 	let health = $state<Health | null>(null);
 	let mode = $state<'reach' | 'route'>('reach');
-	let limitMin = $state(120);
+	let travel = $state<Travel>('vehicle');
+	let carLimitMin = $state(120);
+	let walkLimitMin = $state(30);
+	let walkKmh = $state(4.0);
+	// 今の打ち切り（色の目盛り・表示・API に使う）
+	const limitMin = $derived(travel === 'walk' ? walkLimitMin : carLimitMin);
+	const source = $derived(SRC[travel]);
 	let useExpressway = $state(true);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
@@ -36,7 +48,8 @@
 	let panelOpen = $state(true);
 	const narrow = () => matchMedia('(max-width: 639px)').matches;
 
-	const ready = $derived((health?.graph_loaded ?? false) && overlayReady);
+	const walkAvailable = $derived(health?.walk?.enabled ?? false);
+	const ready = $derived((travel === 'walk' ? (health?.walk?.loaded ?? false) : (health?.graph_loaded ?? false)) && overlayReady);
 	const hasBookmarks = $derived(health?.features?.includes('bookmarks') ?? false); // DB なし（公開版）では出さない
 
 	// ---- 地図
@@ -80,7 +93,8 @@
 	// 到達圏・経路・地点のレイヤ。道路は注記（symbol）の下、経路と地点は最前面
 	function addOverlay() {
 		const m = map!;
-		m.addSource(SOURCE, { type: 'vector', url: TILES, attribution: '国土数値情報（道路データ）を加工して作成' });
+		m.addSource(SRC.vehicle, { type: 'vector', url: TILES, attribution: '国土数値情報（道路データ）を加工して作成' });
+		m.addSource(SRC.walk, { type: 'vector', url: WALK_TILES, attribution: '国土数値情報（道路データ）を加工して作成' });
 		m.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 		m.addSource('points', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 		// 背景スタイルは symbol（注記）が途中にも挟まるので「最初の symbol の前」では道路・建物に被られる。
@@ -91,17 +105,22 @@
 		const firstSymbol = layers[i]?.id;
 		// パン対策: 3 レイヤとも画面内の全リンクを毎フレーム描くので、レイヤ数がそのまま重さになる。
 		// 薄い全道路は z11 以上（背景の地理院タイルに道路があるので広域では要らない）、白縁取りは z10 以上だけ描く
-		m.addLayer({ id: 'roads-base', type: 'line', source: SOURCE, 'source-layer': SOURCE_LAYER, minzoom: 11,
-			paint: { 'line-color': '#bbbbbb', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 13, 1.2],
-				'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.15, 13, 0.4] } }, firstSymbol);
 		// 繋ぎ目対策: 既定の line-cap は butt（角切り）で、リンク境界ごとに切れ目が見える（平均リンク長 100 m・広域では 1 px 未満）。
 		// square は線幅の半分だけ両端を延ばすので隣と重なって繋がる。round は端ごとに扇形を描くため
 		// z8 のパンが 103 → 233 ms と 2 倍重くなった（square は 109 ms）。join は頂点が 3 つ以上のリンク（z10 以上）にしか効かない
 		const roundJoin = { 'line-cap': 'square', 'line-join': 'round' } as const;
-		m.addLayer({ id: 'roads-reach-casing', type: 'line', source: SOURCE, 'source-layer': SOURCE_LAYER, layout: roundJoin, minzoom: 10,
-			paint: { 'line-color': '#ffffff', 'line-width': casingWidth, 'line-opacity': reachOpacity } }, firstSymbol);
-		m.addLayer({ id: 'roads-reach', type: 'line', source: SOURCE, 'source-layer': SOURCE_LAYER, layout: roundJoin,
-			paint: { 'line-color': colorRamp(limitMin), 'line-width': reachWidth, 'line-opacity': reachOpacity } }, firstSymbol);
+		// 車と歩行者で同じ 3 レイヤを作り、使っていない方は visibility: none にする（隠れたレイヤのタイルは読まれない）
+		for (const t of ['vehicle', 'walk'] as Travel[]) {
+			const src = SRC[t], p = LAYER_PREFIX[t];
+			const vis = { visibility: t === travel ? 'visible' : 'none' } as const;
+			m.addLayer({ id: `${p}-base`, type: 'line', source: src, 'source-layer': SOURCE_LAYER, minzoom: 11, layout: vis,
+				paint: { 'line-color': '#bbbbbb', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 13, 1.2],
+					'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.15, 13, 0.4] } }, firstSymbol);
+			m.addLayer({ id: `${p}-reach-casing`, type: 'line', source: src, 'source-layer': SOURCE_LAYER, layout: { ...roundJoin, ...vis }, minzoom: 10,
+				paint: { 'line-color': '#ffffff', 'line-width': casingWidth, 'line-opacity': reachOpacity } }, firstSymbol);
+			m.addLayer({ id: `${p}-reach`, type: 'line', source: src, 'source-layer': SOURCE_LAYER, layout: { ...roundJoin, ...vis },
+				paint: { 'line-color': colorRamp(limitMin), 'line-width': reachWidth, 'line-opacity': reachOpacity } }, firstSymbol);
+		}
 		m.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' },
 			paint: { 'line-color': '#0055ff', 'line-width': 4, 'line-opacity': 0.9 } });
 		m.addLayer({ id: 'points', type: 'circle', source: 'points',
@@ -152,8 +171,18 @@
 	// 読まずに抜けたため依存が登録されず、480 分でも目盛りが 120 分のまま（水戸 90 分が藍色）になっていた
 	$effect(() => {
 		const ramp = colorRamp(limitMin);
+		const layer = `${LAYER_PREFIX[travel]}-reach`;
 		if (!overlayReady) return;
-		map!.setPaintProperty('roads-reach', 'line-color', ramp);
+		map!.setPaintProperty(layer, 'line-color', ramp);
+	});
+
+	// 車 ⇄ 徒歩: レイヤの表示を切り替える
+	$effect(() => {
+		const t = travel;
+		if (!overlayReady) return;
+		for (const u of ['vehicle', 'walk'] as Travel[])
+			for (const s of ['base', 'reach-casing', 'reach'])
+				map!.setLayoutProperty(`${LAYER_PREFIX[u]}-${s}`, 'visibility', u === t ? 'visible' : 'none');
 	});
 
 
@@ -167,7 +196,7 @@
 	}
 
 	function clearReach() {
-		map?.removeFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER });
+		for (const s of Object.values(SRC)) map?.removeFeatureState({ source: s, sourceLayer: SOURCE_LAYER });
 		reach = null;
 		reachIds = null;
 		painted.clear();
@@ -207,13 +236,14 @@
 	let queueFrame = 0;
 	let queueDone: (() => void)[] = []; // 塗り待ちが空になったら呼ぶ
 
+	let paintSource = SRC.vehicle; // 今塗っているソース（paint() で決める）
 	const setCost = (i: number) =>
-		map!.setFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER, id: reachIds![i] }, { cost: reachCosts[i] });
+		map!.setFeatureState({ source: paintSource, sourceLayer: SOURCE_LAYER, id: reachIds![i] }, { cost: reachCosts[i] });
 
 	function paintLoaded() {
 		if (!reachIds || !map) return;
 		const minor: number[] = [];
-		for (const f of map.querySourceFeatures(SOURCE, { sourceLayer: SOURCE_LAYER })) {
+		for (const f of map.querySourceFeatures(paintSource, { sourceLayer: SOURCE_LAYER })) {
 			const id = f.id as number;
 			if (painted.has(id)) continue;
 			painted.add(id);
@@ -244,7 +274,7 @@
 	// タイルが届くたびに呼ばれる。まとめて届くので 1 フレームに 1 回だけ塗り足す
 	let tileFrame = 0;
 	function onTileData(e: maplibregl.MapSourceDataEvent) {
-		if (e.sourceId !== SOURCE || !e.tile || !reachIds || tileFrame) return;
+		if (e.sourceId !== paintSource || !e.tile || !reachIds || tileFrame) return;
 		tileFrame = requestAnimationFrame(() => { tileFrame = 0; paintLoaded(); });
 	}
 
@@ -253,7 +283,8 @@
 	async function paint(r: Reachability) {
 		const gen = ++paintGen;
 		const t0 = performance.now();
-		map!.removeFeatureState({ source: SOURCE, sourceLayer: SOURCE_LAYER });
+		for (const s of Object.values(SRC)) map!.removeFeatureState({ source: s, sourceLayer: SOURCE_LAYER });
+		paintSource = source;
 		painted.clear();
 		clearQueue();
 		reachIds = r.link_ids;
@@ -268,7 +299,7 @@
 	async function runReach(p: LatLon) {
 		busy = true; error = null;
 		try {
-			const r = await api.reachability({ lat: p.lat, lon: p.lon, limit_min: limitMin, use_expressway: useExpressway });
+			const r = await api.reachability({ lat: p.lat, lon: p.lon, limit_min: limitMin, use_expressway: useExpressway, ...travelParams() });
 			reach = r;
 			await paint(r);
 		} catch (e) {
@@ -276,11 +307,14 @@
 		} finally { busy = false; }
 	}
 
+	// 徒歩のときだけ mode・walk_kmh を付ける（付けなければ API は車として扱う）
+	const travelParams = () => (travel === 'walk' ? { mode: 'walk' as const, walk_kmh: walkKmh } : {});
+
 	// ---- 経路
 	async function runRoute(a: LatLon, b: LatLon) {
 		busy = true; error = null;
 		try {
-			const r = await api.route({ from_lat: a.lat, from_lon: a.lon, to_lat: b.lat, to_lon: b.lon, use_expressway: useExpressway });
+			const r = await api.route({ from_lat: a.lat, from_lon: a.lon, to_lat: b.lat, to_lon: b.lon, use_expressway: useExpressway, ...travelParams() });
 			route = r;
 			(map!.getSource('route') as maplibregl.GeoJSONSource).setData({
 				type: 'FeatureCollection',
@@ -316,6 +350,16 @@
 		clearReach(); clearRoute(); setPoints();
 	}
 
+	// 車 ⇄ 徒歩。地点は残して同じ条件で出し直す（徒歩で北海道の外なら API が 400 で案内する）。
+	// 歩行者のタイルは z10 から・細い道は z11 からなので、広域を見ていたら寄る
+	function switchTravel(t: Travel) {
+		if (t === travel) return;
+		travel = t; error = null;
+		clearReach(); clearRoute();
+		if (t === 'walk' && map && map.getZoom() < 12) map.easeTo({ zoom: 13, center: origin ? [origin.lon, origin.lat] : undefined });
+		rerun();
+	}
+
 	// ---- ブックマーク（PostgreSQL / PostGIS・設計書 4 章）
 	async function loadBookmarks() {
 		try { bookmarks = (await api.bookmarks.list()).features; bmError = null; }
@@ -330,9 +374,10 @@
 	}
 	async function showBookmark(b: Bookmark) {
 		if (mode !== 'reach') switchMode('reach');
+		if (travel !== 'vehicle') { travel = 'vehicle'; clearReach(); } // ブックマークは車だけ
 		busy = true; error = null;
 		try {
-			limitMin = b.properties.limit_min; useExpressway = b.properties.use_expressway;
+			carLimitMin = b.properties.limit_min; useExpressway = b.properties.use_expressway;
 			const r = await api.bookmarks.reachability(b.id);
 			origin = r.origin; setPoints(); reach = r;
 			map!.flyTo({ center: [r.origin.lon, r.origin.lat], zoom: 9 });
@@ -353,7 +398,8 @@
 	const summary = $derived.by(() => {
 		if (busy) return '計算中…';
 		if (error) return error;
-		if (mode === 'reach') return reach ? `${limitMin} 分・${fmt(reach.count)} 本` : `到達圏・${limitMin} 分 — 地図をタップ`;
+		const how = travel === 'walk' ? `徒歩 ${walkKmh.toFixed(1)} km/h・` : '';
+		if (mode === 'reach') return reach ? `${how}${limitMin} 分・${fmt(reach.count)} 本` : `到達圏・${how}${limitMin} 分 — 地図をタップ`;
 		if (route?.geometry) return `${(route.summary.dist_m / 1000).toFixed(1)} km・${hm(route.summary.time_min)}`;
 		return origin ? '終点をタップ' : '経路探索 — 起点をタップ';
 	});
@@ -397,23 +443,48 @@
 			<button class="flex-1 py-1 {mode === 'route' ? 'bg-[#0060df] text-white' : ''}" onclick={() => switchMode('route')}>経路探索</button>
 		</div>
 
+		{#if walkAvailable}
+			<div class="flex rounded border border-gray-300 text-center" role="group" aria-label="移動手段">
+				<button class="flex-1 py-1 {travel === 'vehicle' ? 'bg-[#0060df] text-white' : ''}" onclick={() => switchTravel('vehicle')} disabled={busy}>車</button>
+				<button class="flex-1 py-1 {travel === 'walk' ? 'bg-[#0060df] text-white' : ''}" onclick={() => switchTravel('walk')} disabled={busy}>徒歩（北海道）</button>
+			</div>
+			{#if travel === 'walk' && !health?.walk?.loaded}
+				<p class="text-xs {health?.walk?.error ? 'text-red-700' : 'animate-pulse text-amber-600'}">
+					{health?.walk?.error ? `歩行者のグラフを読み込めませんでした: ${health.walk.error}` : '歩行者のグラフを読み込み中…'}
+				</p>
+			{/if}
+		{/if}
+
 		<p class="text-xs text-gray-600">
-			{#if mode === 'reach'}地図をクリック → その地点から <b>{limitMin} 分</b>で行ける道路を着色
+			{#if mode === 'reach'}地図をクリック → その地点から <b>{travel === 'walk' ? '徒歩 ' : ''}{limitMin} 分</b>で行ける道路を着色
 			{:else}地図を 2 回クリック（<span style="color:#00aa44">●</span>起点 → <span style="color:#dd2222">●</span>終点）{/if}
 		</p>
 
-		{#if mode === 'reach'}
+		{#if travel === 'walk'}
+			<label class="flex flex-col gap-1">
+				<span class="flex justify-between"><span>歩く速さ</span><b class="font-mono text-[#0060df]">{walkKmh.toFixed(1)} km/h</b></span>
+				<input type="range" min={WALK_KMH.min} max={WALK_KMH.max} step={WALK_KMH.step} bind:value={walkKmh} onchange={rerun} disabled={busy} />
+			</label>
+			{#if mode === 'reach'}
+				<label class="flex flex-col gap-1">
+					<span class="flex justify-between"><span>打ち切り</span><b class="font-mono text-[#0060df]">{walkLimitMin} 分</b></span>
+					<input type="range" min={WALK_LIMIT.min} max={WALK_LIMIT.max} step={WALK_LIMIT.step} bind:value={walkLimitMin} onchange={rerun} disabled={busy} />
+				</label>
+			{/if}
+		{:else}
+			{#if mode === 'reach'}
+				<label class="flex items-center justify-between gap-2">
+					<span>打ち切り</span>
+					<select class="rounded border px-2 py-1" bind:value={carLimitMin} onchange={rerun} disabled={busy}>
+						{#each LIMITS as l}<option value={l}>{l} 分</option>{/each}
+					</select>
+				</label>
+			{/if}
 			<label class="flex items-center justify-between gap-2">
-				<span>打ち切り</span>
-				<select class="rounded border px-2 py-1" bind:value={limitMin} onchange={rerun} disabled={busy}>
-					{#each LIMITS as l}<option value={l}>{l} 分</option>{/each}
-				</select>
+				<span>高速道路を使う</span>
+				<input type="checkbox" class="h-4 w-4" bind:checked={useExpressway} onchange={rerun} disabled={busy} />
 			</label>
 		{/if}
-		<label class="flex items-center justify-between gap-2">
-			<span>高速道路を使う</span>
-			<input type="checkbox" class="h-4 w-4" bind:checked={useExpressway} onchange={rerun} disabled={busy} />
-		</label>
 
 		{#if mode === 'reach'}
 			<div class="text-xs">
@@ -424,7 +495,11 @@
 					{#each bandEdges(limitMin) as _, i}<span class="flex-1 text-right">{edgeLabel(limitMin, i)}</span>{/each}
 				</div>
 				<p class="mt-0.5 text-gray-500">分（到達に掛かる時間）。広域では太い道だけを表示</p>
-				<p class="text-gray-500">速度の前提: 高速 80 / 国道 35 / 都道府県道 30 / 市区町村道 20 km/h</p>
+				{#if travel === 'walk'}
+					<p class="text-gray-500">速度の前提: 徒歩 {walkKmh.toFixed(1)} km/h（一律）。細街路・徒歩道を含む北海道の全道路（高速を除く）</p>
+				{:else}
+					<p class="text-gray-500">速度の前提: 高速 80 / 国道 35 / 都道府県道 30 / 市区町村道 20 km/h</p>
+				{/if}
 			</div>
 		{/if}
 
