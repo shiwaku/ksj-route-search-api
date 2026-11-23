@@ -148,6 +148,9 @@
 		map.on('load', addOverlay);
 		if (narrow()) map.once('load', () => mapEl.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'));
 		map.on('sourcedata', onTileData);
+		// 前に表示したズームへ戻ると、キャッシュ済みのタイルが使われて sourcedata（e.tile 付き）が来ない。
+		// 鹿児島に寄ってタップ → 全国に引く、で鹿児島のまわりしか塗られなかった（2026-11-23）。動き終わったら塗り足す
+		map.on('moveend', () => { if (reachIds) paintLoaded(); });
 		if (import.meta.env.DEV) (window as unknown as { __map: Map }).__map = map; // 開発時のみ: Playwright から計測するため
 		map.addControl(new maplibregl.NavigationControl(), narrow() ? 'bottom-right' : 'top-right'); // スマホはパネルと重ならないよう右下
 		map.addControl(new maplibregl.ScaleControl());
