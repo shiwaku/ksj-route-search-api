@@ -33,12 +33,15 @@ const LIMITED = new Set(["/reachability", "/route"]);
 // 画面がブラウザごとに作るランダム ID（web/src/lib/api.ts の clientId）。会場の Wi-Fi のように大勢が 1 つの IP を
 // 共有しても、端末ごとに数えられるようにする（issue #25）。形の合わないものは「ID なし」として同じ枠で数える
 const CLIENT_ID = /^[A-Za-z0-9-]{8,64}$/;
-const TILE_PATH = "/tiles/roads_nationwide.pmtiles";
-// 共有バケット shi-works のキー。第 1 階層はアクセス方法（pmtiles/）、第 2 階層はプロジェクト名
+// 画面が読むパス → 共有バケット shi-works のキー。第 1 階層はアクセス方法（pmtiles/）、第 2 階層はプロジェクト名
 // （xserver-cleanup の R2-STRUCTURE.md §4）。ファイル名の版（N13-24）はグラフ parquet と揃え、
 // 同じデータでタイルの作り方だけ変えたら _v2, _v3 … を付ける（_v2: z5-8 を高速・国道だけにした・issue #17）。
 // データを更新するときは新しい版を別キーで置き、ここを書き換えてイメージと同時にデプロイする（README「データの更新」）
-const TILE_KEY = "pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles";
+// 歩行者（北海道の全道路・issue #55）は link_id が車とは別なので、別のファイル・別のキー
+const TILE_KEYS: Record<string, string> = {
+  "/tiles/roads_nationwide.pmtiles": "pmtiles/ksj-route-search/roads_nationwide_N13-24_v2.pmtiles",
+  "/tiles/roads_hokkaido_walk.pmtiles": "pmtiles/ksj-route-search/roads_hokkaido_walk_N13-24.pmtiles",
+};
 
 const json = (status: number, detail: string, headers: HeadersInit = {}) =>
   Response.json({ detail }, { status, headers });
@@ -47,7 +50,8 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) return api(request, url, env);
-    if (url.pathname === TILE_PATH) return tiles(request, env, ctx);
+    const tileKey = TILE_KEYS[url.pathname];
+    if (tileKey) return tiles(request, env, ctx, tileKey);
     if (url.pathname.startsWith("/tiles/")) return new Response("Not found", { status: 404 });
     return env.ASSETS.fetch(request);
   },
@@ -100,25 +104,25 @@ function instance(env: Env, i: number) {
 // R2 から毎回読むと Range 1 回に約 0.2 秒掛かり、地図 1 画面で数十回読むので描画が遅い（issue #4）。
 // 読んだ範囲をこのデータセンターの Cache API に置き、2 回目以降はそこから返す。Cache API は無料。
 // cache.put は 206 を受け付けないので「URL＋範囲」をキーに 200 で保存し、返すときに 206 に戻す。
-// キーに TILE_KEY（版入り）を含めるので、データ更新でキーを変えれば古いキャッシュは読まれない
+// キーに R2 のキー（版入り）を含めるので、データ更新でキーを変えれば古いキャッシュは読まれない
 const TILE_CACHE_SECONDS = 86400;
 // PMTiles のクライアントが読むのはディレクトリ（16 KB 程度）とタイル（上限 1.5 MB）。これより大きい範囲は置かない
 const TILE_CACHE_MAX_BYTES = 4 * 1024 * 1024;
 
-async function tiles(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function tiles(request: Request, env: Env, ctx: ExecutionContext, key: string): Promise<Response> {
   const m = request.method === "GET" ? /^bytes=(\d+)-(\d+)$/.exec(request.headers.get("Range") ?? "") : null;
   if (m && !request.headers.has("If-None-Match")) {
     const start = Number(m[1]), end = Number(m[2]);
     if (end >= start && end - start + 1 <= TILE_CACHE_MAX_BYTES) {
-      return cachedRange(request, env, ctx, start, end);
+      return cachedRange(request, env, ctx, key, start, end);
     }
   }
-  return tilesFromR2(request, env);
+  return tilesFromR2(request, env, key);
 }
 
-async function cachedRange(request: Request, env: Env, ctx: ExecutionContext, start: number, end: number): Promise<Response> {
+async function cachedRange(request: Request, env: Env, ctx: ExecutionContext, tileKey: string, start: number, end: number): Promise<Response> {
   const keyUrl = new URL(request.url);
-  keyUrl.pathname = `/__tile-cache/${TILE_KEY}`;
+  keyUrl.pathname = `/__tile-cache/${tileKey}`;
   keyUrl.search = `?r=${start}-${end}`;
   const key = new Request(keyUrl.toString());
   const cache = caches.default;
@@ -131,7 +135,7 @@ async function cachedRange(request: Request, env: Env, ctx: ExecutionContext, st
     return rangeResponse(hit.body, hit.headers, "HIT");
   }
 
-  const obj = await env.TILES.get(TILE_KEY, { range: { offset: start, length: end - start + 1 }, onlyIf: request.headers });
+  const obj = await env.TILES.get(tileKey, { range: { offset: start, length: end - start + 1 }, onlyIf: request.headers });
   if (!obj) return new Response("Not found", { status: 404 });
   const headers = tileHeaders(obj);
   if (!("body" in obj)) return new Response(null, { status: 412, headers });
@@ -154,9 +158,9 @@ function rangeResponse(body: BodyInit | null, src: Headers, cacheStatus: "HIT" |
   return new Response(body, { status: 206, headers });
 }
 
-async function tilesFromR2(request: Request, env: Env): Promise<Response> {
+async function tilesFromR2(request: Request, env: Env, tileKey: string): Promise<Response> {
   if (request.method === "HEAD") {
-    const head = await env.TILES.head(TILE_KEY);
+    const head = await env.TILES.head(tileKey);
     if (!head) return new Response("Not found", { status: 404 });
     const headers = tileHeaders(head);
     headers.set("Content-Length", String(head.size));
@@ -164,7 +168,7 @@ async function tilesFromR2(request: Request, env: Env): Promise<Response> {
   }
   if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
 
-  const obj = await env.TILES.get(TILE_KEY, { range: request.headers, onlyIf: request.headers });
+  const obj = await env.TILES.get(tileKey, { range: request.headers, onlyIf: request.headers });
   if (!obj) return new Response("Not found", { status: 404 });
   const headers = tileHeaders(obj);
   // 条件付きリクエストが外れると body の無い R2Object が返る

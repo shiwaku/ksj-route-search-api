@@ -16,6 +16,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY network/nationwide/KSJ_N13-24_nationwide_graph/ network/nationwide/KSJ_N13-24_nationwide_graph/
+# 歩行者（北海道の全道路・197 MiB・issue #55）。無いと mode=walk だけ 500 になり、車は動く
+COPY network/hokkaido_walk/KSJ_N13-24_hokkaido_walk_graph/ network/hokkaido_walk/KSJ_N13-24_hokkaido_walk_graph/
 COPY api ./api
 
 EXPOSE 8000
