@@ -196,7 +196,7 @@ CH・MLD は前処理で近道（ショートカット）や区画の表を足�
 
 **Valhalla を Valhalla 自身の物差しで測り直す**
 
-Valhalla と OSRM で経路が違う 82 組について、OSRM の経路を Valhalla の道路網上でなぞり（`/trace_route`・`shape_match: map_snap`）、Valhalla の所要で測った。
+Valhalla と OSRM で経路が違う 82 組について、OSRM の経路を Valhalla の道路ネットワーク上でなぞり（`/trace_route`・`shape_match: map_snap`）、Valhalla の所要で測った。
 Valhalla 自身の経路をなぞると `/route` の所要と誤差 0 秒で一致するので、測り方は正確。
 
 | | OSRM の経路の方が Valhalla の物差しで速い | うち 3 秒超 | 最大 |
