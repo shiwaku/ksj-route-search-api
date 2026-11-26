@@ -132,4 +132,4 @@ for i in 0 1 2 3; do curl -s -w " ← $i 台目 %{time_total}s\n" "$URL/api/heal
 
 1. Access を付け直す（本人だけ）。手順は [deploy/cloudflare/README.md](../../deploy/cloudflare/README.md)「限定公開」の 1〜5 と、ポリシーの Include を **Emails** = 本人のアドレスにする。外したときに One-time PIN やログイン方法の設定が消えたかは未確認なので、シークレットウィンドウで開いてメール入力だけの画面になるかで確かめる
 2. 1 台・10 分に戻してデプロイする: `wrangler.jsonc` を `CONTAINER_COUNT: "1"`・`max_instances: 1`・`SLEEP_AFTER: "10m"` にし、デプロイ専用の作業ツリーから `npm run deploy`。この変更は PR にして main に入れる
-3. 1〜3 台目は使われなくなり、寝るまで（最大 5 時間）で止まる。翌日、Cloudflare のダッシュボードで費用を確かめる
+3. 1〜3 台目は使われなくなる。デプロイで入れ替わってすぐ止まるのか、最後のリクエストから 5 時間待つのかは未確認。`npx wrangler containers list` で ID を調べ、`npx wrangler containers instances <ID>` の `STATE` で止まったかを見る（止まらなくても、4 台が最後のリクエストから 5 時間起きて約 $0.8）。翌日、Cloudflare のダッシュボードで費用を確かめる
