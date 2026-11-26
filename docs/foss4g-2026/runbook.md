@@ -18,24 +18,27 @@ FOSS4G Hokkaido 2026（11/28・トナリエ北広島）で、来場者にスマ�
 
 負荷試験（11/23・[記録](../bench/2026-11-23/README.md)）では、4 台で混在 100 人の最遅が 2.7 秒・エラー 0。起こすのに 1 台あたり約 70 秒。
 
-## 決めておくこと
+## 発表の時刻と決めたこと
 
-| | 案 | 理由 |
+発表は **11/28（土）13:00〜13:15**。昼休憩（12:00〜13:00）の直後・午後の 1 人目（[大会サイト](https://foss4g.hokkaido.jp/2026)のタイムスケジュール）。受付 10:00・オープニング 10:30。
+
+| | 決めたこと | 理由 |
 |---|---|---|
-| 寝るまでの時間 | 当日だけ `2h` に上げる（11/27 にデプロイ） | 10 分だと、朝に起こしてから発表までに寝てしまい、発表の最初のタップで約 70 秒待つ。起きている間の費用は 4 台で 1 時間 約 $0.15 |
-| デプロイの日 | 11/27（前日）の夜 | 当日の朝にイメージのビルドで詰まると取り返せない。上げないなら、デプロイ自体を省いてよい（#58 は文言だけ） |
-| Access を外す時刻 | 11/28 の朝、確認が済んだあと | 外すと誰でも開けるので、前日から外す理由はない |
+| 寝るまでの時間 | 当日だけ `5h` に上げる（11/27 にデプロイ） | 9:00 に起こせば、誰も触らなくても 14:00 まで起きている。10 分のままだと昼休憩の間に寝て、発表の最初のタップで約 70 秒待つ。起きている間の費用は 4 台で 1 時間 約 $0.15（9:00〜15:00 で約 $1） |
+| 起こす時刻 | 11/28 の 9:00 | Access を付けたまま、ログイン済みのブラウザで起こせる |
+| デプロイの日 | 11/27（前日）の夜 | 当日の朝にイメージのビルドで詰まると取り返せない。#58 のエラー文も一緒に入る |
+| Access を外す時刻 | 会場に着いて予備デモを起動したあと、12:00 まで | 外すと誰でも開けるので、外している時間を短くする |
 
 ## 11/27（前日）
 
-### 1. 寝るまでの時間を上げてデプロイする（上の案を採るとき）
+### 1. 寝るまでの時間を上げてデプロイする
 
 デプロイ専用の作業ツリー `../ksj-route-search-api-deploy`（`network/` が実ディレクトリ）を使う。Docker Desktop を起動しておく。
 
 ```bash
 cd ../ksj-route-search-api-deploy
 git fetch && git checkout --detach origin/main
-# deploy/cloudflare/wrangler.jsonc の vars.SLEEP_AFTER を "2h" に書き換える（台数 4 はそのまま）
+# deploy/cloudflare/wrangler.jsonc の vars.SLEEP_AFTER を "5h" に書き換える（台数 4 はそのまま）
 cd deploy/cloudflare && npm run deploy
 ```
 
@@ -78,25 +81,44 @@ Workers & Pages の一覧にある **Protect all Workers**（アカウント全�
 
 ## 11/28（当日）
 
-### 朝（会場に着いたら）
+| 時刻 | やること |
+|---|---|
+| 9:00 | 4 台を起こす（Access は付けたまま） |
+| 10:00 | 会場に着く。予備デモを起動する |
+| 〜12:00 | Access を外し、会場の Wi-Fi からスマホで確かめる |
+| 12:50 | 全台が起きているかを確かめる |
+| 13:00 | 発表 |
+| 発表後 | Access を付け直し、1 台・10 分に戻す（下の「発表後」） |
+
+### 9:00 4 台を起こす
+
+ログイン済みのブラウザで、次の 4 つを順に開く。寝ていた台は約 70 秒かかる。全部 `"status":"ok"` と `walk.loaded: true` になれば起きている。
+
+- https://ksj-route-search.shi-works-worker.workers.dev/api/health?instance=0
+- https://ksj-route-search.shi-works-worker.workers.dev/api/health?instance=1
+- https://ksj-route-search.shi-works-worker.workers.dev/api/health?instance=2
+- https://ksj-route-search.shi-works-worker.workers.dev/api/health?instance=3
+
+`SLEEP_AFTER` が 5h なので、このあと誰も触らなくても 14:00 まで起きている。
+
+### 10:00〜12:00 会場で
 
 1. 発表用 PC で予備デモ（②）を起動しておく
 2. Access を外す（前日に見た Access タブで）
 3. シークレットウィンドウとスマホ（モバイル回線）で公開版を開き、ログイン画面が出ないこと
-4. 全台を起こす。Access を外したあとなら curl で届く:
+4. 会場の Wi-Fi につないだスマホで、会場（トナリエ北広島）をタップして到達圏が出ること、経路を 1 本引けること
 
-   ```bash
-   URL=https://ksj-route-search.shi-works-worker.workers.dev
-   for i in 0 1 2 3; do curl -s -w " ← $i 台目 %{time_total}s\n" "$URL/api/health?instance=$i"; done
-   ```
+### 12:50 全台を確かめる
 
-   寝ていた台は約 70 秒かかる。全台 `"status":"ok"` になるまで繰り返す
-5. 会場の Wi-Fi につないだスマホで、会場（トナリエ北広島）をタップして到達圏が出ること、経路を 1 本引けること
+Access を外したあとなので curl で届く（ブラウザで上の 4 つを開いてもよい）:
 
-### 発表の 10 分前
+```bash
+URL=https://ksj-route-search.shi-works-worker.workers.dev
+for i in 0 1 2 3; do curl -s -w " ← $i 台目 %{time_total}s\n" "$URL/api/health?instance=$i"; done
+```
 
-- `SLEEP_AFTER` を 10m のままにしたときは、ここで 4. をもう一度流して全台を起こす（2h にしていれば不要）
-- 公開版を開いたタブと、予備デモのタブを両方用意しておく
+どれも 1 秒前後で返れば起きている。数十秒かかった台は寝ていたので、全台 `"status":"ok"` になるまで繰り返す。
+公開版を開いたタブと、予備デモのタブを両方用意しておく。
 
 ### 発表中に公開版が駄目になったら
 
@@ -110,4 +132,4 @@ Workers & Pages の一覧にある **Protect all Workers**（アカウント全�
 
 1. Access を付け直す（本人だけ）。手順は [deploy/cloudflare/README.md](../../deploy/cloudflare/README.md)「限定公開」の 1〜5 と、ポリシーの Include を **Emails** = 本人のアドレスにする。外したときに One-time PIN やログイン方法の設定が消えたかは未確認なので、シークレットウィンドウで開いてメール入力だけの画面になるかで確かめる
 2. 1 台・10 分に戻してデプロイする: `wrangler.jsonc` を `CONTAINER_COUNT: "1"`・`max_instances: 1`・`SLEEP_AFTER: "10m"` にし、デプロイ専用の作業ツリーから `npm run deploy`。この変更は PR にして main に入れる
-3. 1〜3 台目は使われなくなり、寝るまで（2h にしたなら最大 2 時間）で止まる。翌日、Cloudflare のダッシュボードで費用を確かめる
+3. 1〜3 台目は使われなくなり、寝るまで（最大 5 時間）で止まる。翌日、Cloudflare のダッシュボードで費用を確かめる
