@@ -35,7 +35,7 @@ for c3, c6, wkb in rows:
 
 fig = plt.figure(figsize=(5.0, 5.1), dpi=300)
 ax = fig.add_axes((0, 0, 1, 1))
-ax.add_collection(LineCollection(other, colors='#B8BECC', linewidths=0.25))
+ax.add_collection(LineCollection(other, colors='#DB3D33', linewidths=0.4))
 ax.add_collection(LineCollection(used, colors='#304CF0', linewidths=0.6))
 ax.set_xlim(X0, X1)
 ax.set_ylim(Y0, Y1)
