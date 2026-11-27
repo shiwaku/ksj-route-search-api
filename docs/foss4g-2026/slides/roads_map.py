@@ -14,9 +14,8 @@ SRC = ROOT / 'input/geoparquet/N13-24_6441.parquet'
 OUT = Path(__file__).parent / 'shots/ksj_roads_sapporo.png'
 # 札幌駅のまわり（スライドの枠 5.0 × 5.1 インチに合わせた範囲。経度は cos(43.07°) で縮む）
 X0, X1, Y0, Y1 = 141.298, 141.402, 43.025, 43.105
-# preprocess/build_network_parquet.py の --filter と同じ: 国道・都道府県道・高速 または 幅員 5.5m 以上
-ROAD_CLASS_OK = ('1', '2', '4')
-WIDTH_OK = ('3', '4', '5')
+# 幅員区分種別（N13_006）が 1＝3m 未満の道路だけ赤、それ以外を青で描く
+NARROW = '1'
 
 con = duckdb.connect()
 con.sql('INSTALL spatial; LOAD spatial')
@@ -30,13 +29,13 @@ used, other = [], []
 for c3, c6, wkb in rows:
     g = from_wkb(bytes(wkb))
     parts = [get_geometry(g, i) for i in range(get_num_geometries(g))]
-    dst = used if (c3 in ROAD_CLASS_OK or c6 in WIDTH_OK) else other
+    dst = other if c6 == NARROW else used
     dst.extend(get_coordinates(p) for p in parts)
 
 fig = plt.figure(figsize=(5.0, 5.1), dpi=300)
 ax = fig.add_axes((0, 0, 1, 1))
-ax.add_collection(LineCollection(other, colors='#DB3D33', linewidths=0.4))
-ax.add_collection(LineCollection(used, colors='#304CF0', linewidths=0.6))
+ax.add_collection(LineCollection(used, colors='#304CF0', linewidths=0.5))
+ax.add_collection(LineCollection(other, colors='#DB3D33', linewidths=0.7))  # 赤を上に重ねて目立たせる
 ax.set_xlim(X0, X1)
 ax.set_ylim(Y0, Y1)
 ax.set_aspect(1 / 0.7307)  # cos(43.07°)
