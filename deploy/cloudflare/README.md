@@ -108,7 +108,7 @@ Docker Desktop が動いていること（wrangler がイメージをビルド�
 cd deploy/cloudflare
 npm install
 npx wrangler login
-npm run deploy      # 画面を build → Worker・Assets・コンテナをデプロイ。初回はイメージ 2.7 GB の push で数分〜
+npm run deploy      # 画面を build → Worker・Assets・コンテナをデプロイ。初回はイメージ約 3.2 GB の push で数分〜
 
 curl https://ksj-route-search.shi-works-worker.workers.dev/api/health   # 寝ている状態からの初回は約 50 秒
 ```
@@ -150,6 +150,35 @@ Worker が読んだ範囲を Cache API（`caches.default`）に 1 日置き、2 
 - **ログ**: `npx wrangler tail`、または Cloudflare ダッシュボードの Workers → ksj-route-search → Logs（`observability` 有効）
 - **回数制限に当たる**（画面に `429: リクエストが多すぎます`）なら `wrangler.jsonc` の `ratelimits` の `limit` を上げて `npx wrangler deploy`（`period` は 10 か 60 のみ）。1 人の連打なら `API_LIMITER`（端末ごと）、同じ Wi-Fi の大勢なら `IP_LIMITER`（IP 全体）
 - **費用の上限**は standard-1 を 24 時間起動し続けて約 $32/月（`max_instances: 1`）。設計書 7 章
+
+## イメージの大きさの上限
+
+道路ネットワークのデータ（組み立て済みの探索グラフ）はイメージに焼いているので、データを増やすとイメージの上限に当たることがある。上限は公式の [Limits](https://developers.cloudflare.com/containers/platform-details/limits/)（2026-11-12 更新版を 2026-11-28 に確認）。
+
+- **1 つのイメージの大きさはインスタンスのディスクと同じ**（固定の数字は無い）
+
+  | `instance_type` | vCPU | メモリ | ディスク（＝イメージの上限） |
+  |---|---:|---:|---:|
+  | lite | 1/16 | 256 MiB | 2 GB |
+  | basic | 1/4 | 1 GiB | 4 GB |
+  | **standard-1**（ふだん） | 1/2 | 4 GiB | 8 GB |
+  | standard-2 | 1 | 6 GiB | 12 GB |
+  | standard-3 | 2 | 8 GiB | 16 GB |
+  | standard-4 | 4 | 12 GiB | 20 GB |
+
+- **アカウント全体のイメージ置き場は 50 GB。** 同じアカウントの [overture-route-search-api](https://github.com/shiwaku/overture-route-search-api) と共有している。古いタグは `npx wrangler containers images delete <イメージ>:<タグ>` で消せるが、消したタグのバージョンへはロールバックできなくなることがある
+- どちらも既定値で、サポートに頼めば上げられる
+
+2026-11-28 時点（手元の `docker images` の大きさ。展開後の値）:
+
+| イメージ | 大きさ | 型 |
+|---|---:|---|
+| ksj-route-search（全国の自動車用＋北海道の歩行者用の探索グラフ） | 3.18 GB | standard-1 の 8 GB に収まる |
+| overture Eurasia / Americas / Other | 14.9 / 7.86 / 3.83 GB | — |
+
+- 先に当たるのはディスクよりメモリ。常駐 1.02 GiB・ピーク 1.34 GiB（上の「実測」）で、standard-1 の 4 GiB に収まっている
+- 50 GB の数え方（圧縮後か、同じレイヤを 1 回だけ数えるか）は書かれておらず、使用量は未確認。デプロイのたびにタグが増えるので、ときどき `npx wrangler containers images list` で見る
+- データを足して 8 GB を超えるなら `instance_type` を上げる（費用も上がる）
 
 ## 当日の構成（FOSS4G Hokkaido 2026・複数台と寝ない設定）
 
