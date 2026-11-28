@@ -149,7 +149,7 @@ Worker が読んだ範囲を Cache API（`caches.default`）に 1 日置き、2 
 - **スリープ**: 最後のリクエストから 10 分で寝る（`vars.SLEEP_AFTER`）。寝ている間は課金されない。稼働中かどうかは `npx wrangler containers list` で ID を調べ、`npx wrangler containers instances <ID>` の `STATE` を見る（`LIVE INSTANCES` は寝ていても 1 のままで使えない。お手本の README）
 - **ログ**: `npx wrangler tail`、または Cloudflare ダッシュボードの Workers → ksj-route-search → Logs（`observability` 有効）
 - **回数制限に当たる**（画面に `429: リクエストが多すぎます`）なら `wrangler.jsonc` の `ratelimits` の `limit` を上げて `npx wrangler deploy`（`period` は 10 か 60 のみ）。1 人の連打なら `API_LIMITER`（端末ごと）、同じ Wi-Fi の大勢なら `IP_LIMITER`（IP 全体）
-- **費用の上限**は standard-1 を 24 時間起動し続けて約 $32/月（`max_instances: 1`）。設計書 7 章
+- **費用の上限**は standard-1 を 24 時間起動し続けて約 $32/月（`max_instances: 1`）。設計書 7 章。型ごとの計算は下の「常時起動したときの費用」
 
 ## イメージの大きさの上限
 
@@ -179,6 +179,23 @@ Worker が読んだ範囲を Cache API（`caches.default`）に 1 日置き、2 
 - 先に当たるのはディスクよりメモリ。常駐 1.02 GiB・ピーク 1.34 GiB（上の「実測」）で、standard-1 の 4 GiB に収まっている
 - 50 GB の数え方（圧縮後か、同じレイヤを 1 回だけ数えるか）は書かれておらず、使用量は未確認。デプロイのたびにタグが増えるので、ときどき `npx wrangler containers images list` で見る
 - データを足して 8 GB を超えるなら `instance_type` を上げる（費用も上がる）
+
+## 常時起動したときの費用
+
+公式の [Pricing](https://developers.cloudflare.com/containers/pricing/)（2026-11-13 更新版を 2026-11-28 に確認）から計算した 1 台あたりの目安。メモリとディスクは起動している間ずっと型の大きさの分だけ、CPU は実際に使った分だけ課金される（10 ms 単位）。寝ている間は課金されない。
+
+- 単価（Workers Paid・月 $5）: メモリ $0.0000025/GiB 秒（月 25 GiB 時間まで無料）、CPU $0.000020/vCPU 秒（月 375 vCPU 分まで無料）、ディスク $0.00000007/GB 秒（月 200 GB 時間まで無料）
+- 1 年 365 日・1 か月 730 時間で計算。無料分は差し引いた
+
+| 型 | メモリ | ディスク | 基本料 | **CPU をほぼ使わない** | CPU（ずっと 100%） | **上限の目安** |
+|---|---:|---:|---:|---:|---:|---:|
+| standard-1（ふだん） | $313/年 | $17/年 | $60/年 | **約 $390/年**（月 $32） | +$310/年 | 約 $700/年 |
+| standard-4 | $943/年 | $44/年 | $60/年 | **約 $1,050/年**（月 $87） | +$2,517/年 | 約 $3,560/年 |
+
+- このアプリが CPU を使うのは到達圏・経路を計算するときだけなので、実際は「ほぼ使わない」に近い。平均 5% なら standard-4 の CPU は $126/年ほど
+- 費用のほとんどはメモリ。台数を増やすとそのまま台数倍になる。基本料はほかの Worker と共有
+- 1 ドル 150 円なら standard-4 は約 16〜53 万円/年
+- 別にかかるもの: 通信量（日本は「その他の地域」で月 500 GB まで無料、超えた分 $0.04/GB）、Worker・Durable Objects のリクエスト、ログ
 
 ## 当日の構成（FOSS4G Hokkaido 2026・複数台と寝ない設定）
 
